@@ -1,0 +1,36 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/gateware/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/gateware/src"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.typeCheckingMode": "off",
+  "terminal.integrated.cwd": "${workspaceFolder}/gateware",
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.egg-info": true,
+    "gateware/build": false
+  },
+  "search.exclude": {
+    "gateware/build": true,
+    "gateware/.venv": true,
+    "**/target": true
+  },
+  "files.watcherExclude": {
+    "**/gateware/build/**": true,
+    "**/gateware/.venv/**": true
+  },
+
+  "files.associations": {
+    "*.lpf": "plaintext",
+    "*.il": "plaintext"
+  },
+
+  "[python]": {
+    "editor.rulers": [100],
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  }
+}
