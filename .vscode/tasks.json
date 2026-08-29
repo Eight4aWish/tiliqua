@@ -1,0 +1,58 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "tiliqua: elaborate core (fast check)",
+      "type": "shell",
+      "command": "pdm run dsp build --dsp-core ${input:core} --skip-build",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "tiliqua: build core (full bitstream)",
+      "type": "shell",
+      "command": "pdm run dsp build --dsp-core ${input:core}",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "tiliqua: simulate core",
+      "type": "shell",
+      "command": "pdm run dsp sim --dsp-core ${input:core}",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": []
+    },
+    {
+      "label": "tiliqua: beamrace sim (PNG output, no hardware)",
+      "type": "shell",
+      "command": "pdm run beamrace sim --core ${input:beamcore}",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": []
+    },
+    {
+      "label": "tiliqua: pytest suite",
+      "type": "shell",
+      "command": "pdm run test",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "beamcore",
+      "type": "pickString",
+      "description": "beamrace core",
+      "options": ["stripes", "balls", "checkers"],
+      "default": "stripes"
+    },
+    {
+      "id": "core",
+      "type": "promptString",
+      "description": "DSP core name (see CORES in src/top/dsp/top.py)",
+      "default": "template"
+    }
+  ]
+}
