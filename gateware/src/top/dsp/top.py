@@ -35,6 +35,8 @@ from tiliqua.dsp.mix import CoeffUpdate
 from tiliqua.periph import eurorack_pmod, psram
 from tiliqua.platform import RebootProvider
 
+from user_cores import Template
+
 
 class Mirror(wiring.Component):
 
@@ -1288,6 +1290,8 @@ CORES = {
     "noise":          (False, Noise),
     "dwo":            (False, DWO),
     "mmm":            (False, MidiMatrixMixer),
+    # --- locally-authored cores (see user_cores.py) ---
+    "template":       (False, Template),
 }
 
 def simulation_ports(fragment):
