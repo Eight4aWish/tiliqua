@@ -12,7 +12,7 @@ flash it as follows:
 
    # from the `gateware` directory
    pdm lacuna build
-   pdm flash archive build/lacuna-*/
+   pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz
 
 The mesh is a plain audio-domain core with no SoC, no video and no PSRAM, so
 the top level here is only the CODEC, the clocks and the encoder.
