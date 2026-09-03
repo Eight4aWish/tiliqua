@@ -23,6 +23,11 @@ HI, LO = (1 << (WIDTH - 1)) - 1, -(1 << (WIDTH - 1))
 TABLE = tuning_table()
 
 
+def _set_raw(ctx, port, v):
+    """Mirror of lacuna._raw: write raw bits whether ASQ is fixed or plain."""
+    ctx.set(port.as_value() if hasattr(port, "as_value") else port, v)
+
+
 def controls(tension_cv, preset):
     """Mirror the core's per-sample control arithmetic exactly."""
     idx = tension_cv >> 4
@@ -83,10 +88,10 @@ def run_core(tension_cv, samples):
     async def tb(ctx):
         ctx.set(dut.o.ready, 1)
         for k in range(samples):
-            ctx.set(dut.i.payload[0], 8000 if k == 0 else 0)
-            ctx.set(dut.i.payload[1], tension_cv)
-            ctx.set(dut.i.payload[2], 0)
-            ctx.set(dut.i.payload[3], 0)
+            _set_raw(ctx, dut.i.payload[0], 8000 if k == 0 else 0)
+            _set_raw(ctx, dut.i.payload[1], tension_cv)
+            _set_raw(ctx, dut.i.payload[2], 0)
+            _set_raw(ctx, dut.i.payload[3], 0)
             ctx.set(dut.i.valid, 1)
             while not (ctx.get(dut.i.valid) and ctx.get(dut.i.ready)):
                 await ctx.tick()
