@@ -35,6 +35,8 @@ from tiliqua.dsp.mix import CoeffUpdate
 from tiliqua.periph import eurorack_pmod, psram
 from tiliqua.platform import RebootProvider
 
+from lacuna import Lacuna
+
 
 class Mirror(wiring.Component):
 
@@ -1112,6 +1114,10 @@ class CoreTop(Elaboratable):
             m.submodules.btn = FFSynchronizer(
                     platform.request("encoder").s.i, reboot.button)
             m.d.comb += pmod0.codec_mute.eq(reboot.mute)
+            # A core may also watch the encoder button. RebootProvider only
+            # acts on a 3 second hold, so short presses are free for the core.
+            if hasattr(self.core, "button"):
+                m.d.comb += self.core.button.eq(reboot.button)
         else:
             m.submodules.car = sim.FakeTiliquaDomainGenerator()
 
@@ -1288,6 +1294,7 @@ CORES = {
     "noise":          (False, Noise),
     "dwo":            (False, DWO),
     "mmm":            (False, MidiMatrixMixer),
+    "lacuna":         (False, Lacuna),
 }
 
 def simulation_ports(fragment):
