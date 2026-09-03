@@ -71,6 +71,38 @@ Four things, none of which would have been obvious from the equations:
 4. **A Nyquist-frequency limit cycle** sits in the truncation, at roughly
    −85 dBFS. Inaudible in practice but it never dies. Wider state pushes it down;
    a DC/Nyquist blocker on the output tap would remove it outright.
+5. **A default repeated in two places silenced every demo.** `render()` carried
+   its own copies of `loss_shift` and `air_shift`, so fixing them on `Membrane`
+   did nothing and every rendered file was a 10 ms click followed by silence --
+   with the broken broadband damping of (3) still active. `render()` now defaults
+   them to `None` and defers.
+
+## The interesting version
+
+Realism was never the point. Every variant below costs the same per-node
+arithmetic -- adds and shifts, no multipliers -- but none of them can exist as a
+physical object.
+
+![weird variants](weird_frames.png)
+
+*Rows top to bottom: torus, twin lobes, stretched, self-oscillating, annulus.
+Columns at 0.3, 1.5, 3, 5, 8, 14, 22 and 35 ms after the strike.*
+
+| variant | what it is | why it is not a drum |
+|---|---|---|
+| `torus` | edges wrap instead of reflecting | no rim, so nothing returns in phase; the modes are not Bessel and it never settles to a pitch |
+| `twin_lobes` | two discs joined by a narrow neck | energy sloshes between the lobes, beating at a rate set by the neck width |
+| `stretched` | 3:1 anisotropic tension | a real membrane under this tension tears; this one just detunes |
+| `self_oscillating` | a region that amplifies rather than damps | pumps until clipping saturates it, and never decays: a surface that plays itself |
+| `annulus` | a hole in the middle | the hole is a second boundary, giving a Bessel series crossed with a cavity |
+
+```bash
+python weird.py          # renders w1..w5 wavs
+python weird_frames.py   # renders the grid above
+```
+
+The boundary is just a boolean array, so any bitmap is a valid instrument. That
+is the part with no analogue on a sampler or a modal synth.
 
 ## Status and what is still open
 

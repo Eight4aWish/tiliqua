@@ -40,9 +40,25 @@ class Membrane:
     most of what separates a real membrane from a ringing metal plate.
     """
 
-    def __init__(self, n=64, radius=30, loss_shift=13, air_shift=63):
+    def __init__(self, n=64, radius=30, loss_shift=13, air_shift=63,
+                 wrap=False, aniso=None, gain_mask=None, mask=None):
+        """
+        `wrap`      -- torus topology instead of a fixed rim: no reflections, so
+                       waves circulate indefinitely and the modes are no longer
+                       Bessel at all.
+        `aniso`     -- (east_west_weight, north_south_weight) as eighths, summing
+                       to 4 for stability. (2,2) is isotropic; (3,1) is a
+                       membrane stretched harder in one axis than any real one.
+        `gain_mask` -- boolean region that AMPLIFIES instead of damping. Energy
+                       pumps in, clipping saturates it, and the thing never
+                       decays: a self-oscillating surface.
+        `mask`      -- arbitrary boundary shape. Any bitmap is a valid drum.
+        """
         self.n = n
-        self.mask = circular_mask(n, radius)
+        self.mask = circular_mask(n, radius) if mask is None else mask
+        self.wrap = wrap
+        self.aniso = aniso
+        self.gain_mask = gain_mask
         self.u = np.zeros((n, n), dtype=np.int64)
         self.u_prev = np.zeros((n, n), dtype=np.int64)
         self.loss_shift = loss_shift
@@ -56,11 +72,25 @@ class Membrane:
     def step(self, inject=0, inject_at=None, tension_shift=1):
         u, up = self.u, self.u_prev
 
-        neigh = np.zeros_like(u)
-        neigh[1:, :] += u[:-1, :]
-        neigh[:-1, :] += u[1:, :]
-        neigh[:, 1:] += u[:, :-1]
-        neigh[:, :-1] += u[:, 1:]
+        if self.wrap:
+            ns = np.roll(u, 1, 0) + np.roll(u, -1, 0)
+            ew = np.roll(u, 1, 1) + np.roll(u, -1, 1)
+        else:
+            ns = np.zeros_like(u)
+            ns[1:, :] += u[:-1, :]
+            ns[:-1, :] += u[1:, :]
+            ew = np.zeros_like(u)
+            ew[:, 1:] += u[:, :-1]
+            ew[:, :-1] += u[:, 1:]
+
+        if self.aniso is None:
+            neigh = ns + ew
+        else:
+            # Weights in eighths summing to 4, so the >> tension_shift below
+            # still lands at the Courant limit. Multiplying by 3 is a shift and
+            # an add, so this stays multiplier-free.
+            we, wn = self.aniso
+            neigh = ((ew * we) + (ns * wn)) >> 1
 
         # (sum >> 1) - u_prev, with rounding rather than truncation: truncation
         # in this loop is what produces limit cycles and DC drift.
@@ -71,7 +101,12 @@ class Membrane:
         # hack is needed -- that trick works, but it imposes a linear decay that
         # eats the quiet tail, which is most of what makes a struck membrane
         # sound alive.
-        nxt -= np.sign(nxt) * (np.abs(nxt) >> self.loss_shift)
+        if self.gain_mask is None:
+            nxt -= np.sign(nxt) * (np.abs(nxt) >> self.loss_shift)
+        else:
+            # Damp everywhere, amplify inside the gain region.
+            dec = np.sign(nxt) * (np.abs(nxt) >> self.loss_shift)
+            nxt = np.where(self.gain_mask, nxt + dec, nxt - dec)
 
         # Frequency-dependent loss. NOTE: pulling each node toward the average
         # of its neighbours does NOT do this -- `nxt` is u[n+1] while the
@@ -98,9 +133,21 @@ class Membrane:
 
 
 def render(seconds=2.0, strike_at=(32, 32), pickup_at=(20, 38), n=64, radius=30,
-           loss_shift=11, air_shift=5, tension_env=None, excite=None,
-           capture_frames=None):
-    m = Membrane(n=n, radius=radius, loss_shift=loss_shift, air_shift=air_shift)
+           loss_shift=None, air_shift=None, tension_env=None, excite=None,
+           capture_frames=None, membrane=None):
+    # Defaults are None, not literals: an earlier version repeated the Membrane
+    # defaults here, so fixing them in Membrane silently did nothing and every
+    # demo rendered with the broken broadband damping still on -- a 10 ms click
+    # and three seconds of silence. Never restate a default in two places.
+    if membrane is not None:
+        m = membrane
+    else:
+        kw = {}
+        if loss_shift is not None:
+            kw["loss_shift"] = loss_shift
+        if air_shift is not None:
+            kw["air_shift"] = air_shift
+        m = Membrane(n=n, radius=radius, **kw)
     if excite is None:
         m.strike(*strike_at)
 
