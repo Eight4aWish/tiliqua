@@ -140,6 +140,44 @@ hole reads zero forever, which looks exactly like a dead model -- it silenced
 the thin ring completely and killed the last quarter of the morph before
 `check_on_material()` was added to catch it.
 
+## Playing to what the hardware is actually for
+
+The physical model does not need an FPGA. A 32x32 mesh fits on an H7, using
+about 82% of it. What follows does not fit anywhere else in the rack.
+
+**The boundary as an audio-rate parameter.** On a CPU the mask is a 4096-element
+array you rebuild when the shape changes, so shape is a control-rate parameter
+at best. In gateware it is a comparator inline in address generation -- two
+radius registers -- so changing it *every sample* is free. The shape of the
+instrument becomes a modulation destination. No acoustic object has geometry
+that oscillates at 200 Hz.
+
+It works, and it produces real sidebands: at 220 Hz modulation, peaks at 692 and
+912 Hz, 2173 and 2388 Hz. But a moving boundary is a genuinely hard problem in
+FDTD and the three obvious approaches each fail differently:
+
+| approach | tonal share | rms | verdict |
+|---|---|---|---|
+| static annulus (reference) | 0.675 | — | — |
+| hard mask | 0.287 | 0.042 | stable, but nodes snapping in and out inject broadband noise |
+| per-sample rim taper | 0.071 | 0.004 | wrong: multiplying by 3/4 each sample is a decay of 0.75^48000 |
+| newly-born nodes take neighbour average | 0.243 | 0.058 at 60 Hz | stable low, but **pumps energy and saturates at 220 Hz** |
+
+So the usable territory today is the hard mask, whose noise is arguably part of
+the character, or born-from-neighbours below about 100 Hz. An energy-conserving
+moving boundary is the open research problem here, not a coding task.
+
+`u1`-`u6` are the renders that work: geometry under a 3 Hz LFO, then 60, 220 and
+700 Hz; a drone where geometry oscillates while a region pumps energy in; and
+the same modulation applied to a resonator driven by external audio rather than
+struck.
+
+**The other two USPs, not yet built:** the surface state is already in the memory
+the audio is read from, so drawing it at 60 fps is nearly free -- no CPU can show
+you the instrument. And gateware is per-sample, so the module's own output can
+be injected back into the mesh with single-sample latency, making the surface
+part of the patch's feedback loop rather than an endpoint.
+
 ## Status and what is still open
 
 - Frequency-dependent damping is **not implemented**. Without it every mode
