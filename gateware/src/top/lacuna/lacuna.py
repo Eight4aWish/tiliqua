@@ -117,22 +117,22 @@ def _raw(v):
 
 class Lacuna(wiring.Component):
 
-    i: In(stream.Signature(data.ArrayLayout(ASQ, 4)))
-    o: Out(stream.Signature(data.ArrayLayout(ASQ, 4)))
-    # Optional input: CoreTop connects the encoder if the core asks for it,
-    # following the same `hasattr` convention it uses for i_midi.
-    button: In(1)
-
     bitstream_help = BitstreamHelp(
         brief="Lacuna: membrane mesh, hole is the instrument",
         io_left=['strike', 'tension', 'position', 'geometry',
                  'mesh', '', '', ''],
-        io_right=['preset', '', '', '', '', '']
+        io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
-    def __init__(self, n=32, base_loss=13, presets=PRESETS):
+    def __init__(self, n=32, base_loss=13, presets=PRESETS, video=False):
         assert n % 2 == 0
         self.n = n
+        # `video`: also keep an 8-bit snapshot of the mesh for the display. It
+        # costs one BRAM and is written from the scan that already passes every
+        # node once per sample, so the mesh itself is unaffected. Off by default
+        # so the core still elaborates where there is no `dvi` domain -- the
+        # standalone tests, and any audio-only top level.
+        self.video = video
         self.base_loss = base_loss
         self.presets = presets
         for outer, _, _, _, _ in presets:
@@ -143,7 +143,16 @@ class Lacuna(wiring.Component):
         # Exposed so a testbench can compare mesh state against the reference
         # without going through the output scaling.
         self.pickup_dbg = Signal(signed(WIDTH))
-        super().__init__()
+        super().__init__({
+            "i": In(stream.Signature(data.ArrayLayout(ASQ, 4))),
+            "o": Out(stream.Signature(data.ArrayLayout(ASQ, 4))),
+            # Optional input: a top level connects the encoder if the core asks
+            # for it, following the same `hasattr` convention used for i_midi.
+            "button": In(1),
+            # Display tap, read from the `dvi` domain. Reads 0 unless `video`.
+            "disp_addr": In(range(n * n)),
+            "disp_data": Out(8),
+        })
 
     def elaborate(self, platform):
         m = Module()
@@ -296,11 +305,20 @@ class Lacuna(wiring.Component):
         for k in range(1, 2 * n + 1):
             m.d.sync += tap[k].eq(tap[k - 1])
 
+        # Node offset and its squared radius. Registering these splits the one
+        # path that was left combinational from the scan counters all the way
+        # into the mask: jy -> dy -> dy*dy -> d2 -> compare was ~16 ns and, once
+        # the video logic was sharing the die, left the sync domain with almost
+        # no margin. `inside` therefore describes the node one cycle later, so
+        # its delay chain below is one shorter to keep the alignment identical.
+        dx_c = Signal(signed(8))
+        dy_c = Signal(signed(8))
         dx = Signal(signed(8))
         dy = Signal(signed(8))
         d2 = Signal(unsigned(16))
-        m.d.comb += [dx.eq(jx - cx), dy.eq(jy - cy),
-                     d2.eq(dx * dx + dy * dy)]
+        m.d.comb += [dx_c.eq(jx - cx), dy_c.eq(jy - cy)]
+        m.d.sync += [dx.eq(dx_c), dy.eq(dy_c),
+                     d2.eq(dx_c * dx_c + dy_c * dy_c)]
 
         inside = Signal()
         in_square = Signal()
@@ -362,7 +380,7 @@ class Lacuna(wiring.Component):
         m.d.sync += [prod_r.eq(lap_r * lam2), cen3.eq(cen2)]
 
         old_al = delay(old_rd, 4, "old")
-        msk_al = delay(inside, 5, "msk")
+        msk_al = delay(inside, 4, "msk")
         strk_al = delay(strike_hit, 5, "strk")
         val_al = delay(scanning & (j < cells), 5, "val")
 
@@ -387,7 +405,9 @@ class Lacuna(wiring.Component):
 
         written = Signal(signed(WIDTH))
         wr_valid = Signal()
-        m.d.sync += [written.eq(Mux(msk_al, clamped, 0)), wr_valid.eq(val_al)]
+        msk_w = Signal()
+        m.d.sync += [written.eq(Mux(msk_al, clamped, 0)), wr_valid.eq(val_al),
+                     msk_w.eq(msk_al)]
         wr_addr = delay(j[:AW], 6, "jw")
 
         for k in range(2):
@@ -395,6 +415,52 @@ class Lacuna(wiring.Component):
                 wrs[k].addr.eq(wr_addr),
                 wrs[k].data.eq(written),
                 wrs[k].en.eq(wr_valid & (phase == (0 if k == 1 else 1))),
+            ]
+
+        # --- display tap ---------------------------------------------------------
+        # The scan already carries every node past this point once per sample, so
+        # a second, narrower memory written from the same address and strobe is a
+        # free copy of the mesh for the video side to read. It is a plain dual
+        # port BRAM with the read port in the `dvi` domain: the two sides are
+        # asynchronous and a frame may catch a half-updated mesh, which for a
+        # 48 kHz mesh on a 60 Hz display is invisible.
+        #
+        # DISP_SHIFT sets how much mesh amplitude fills the 8-bit range. Measured
+        # peaks are around 2**19.7, so 13 puts a loud strike near full scale and
+        # saturates rather than wrapping -- a wrapped node would read as a bright
+        # speck exactly where the mesh is loudest.
+        #
+        # 0 is reserved to mean "outside the membrane", so the display can draw
+        # the shape of the current preset even when nothing is ringing. Without
+        # it a mesh at rest is a black screen, which looks exactly like a dead
+        # video output; with it the geometry is always on screen, which is also
+        # the only way to tell which preset the encoder has landed on.
+        if self.video:
+            DISP_SHIFT = 13
+            m.submodules.disp = disp = Memory(
+                shape=unsigned(8), depth=cells, init=[0] * cells)
+            disp_wr = disp.write_port()
+            lvl = Signal(signed(WIDTH))
+            disp_val = Signal(unsigned(8))
+            m.d.comb += lvl.eq(written >> DISP_SHIFT)
+            with m.If(~msk_w):
+                m.d.comb += disp_val.eq(0)          # outside the membrane
+            with m.Elif(lvl > 127):
+                m.d.comb += disp_val.eq(255)
+            with m.Elif(lvl < -127):
+                m.d.comb += disp_val.eq(1)
+            with m.Else():
+                # in-membrane values live in 1..255, so they never read as 0
+                m.d.comb += disp_val.eq(Mux(lvl + 128 == 0, 1, (lvl + 128)[:8]))
+            m.d.comb += [
+                disp_wr.addr.eq(wr_addr),
+                disp_wr.data.eq(disp_val),
+                disp_wr.en.eq(wr_valid),
+            ]
+            disp_rd = disp.read_port(domain="dvi")
+            m.d.comb += [
+                disp_rd.addr.eq(self.disp_addr),
+                self.disp_data.eq(disp_rd.data),
             ]
 
         with m.If(wr_valid & (wr_addr == pickup_node)):
