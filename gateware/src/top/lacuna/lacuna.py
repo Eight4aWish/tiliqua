@@ -314,10 +314,16 @@ class Lacuna(wiring.Component):
                       & ~(g_slit & in_slit)),
         ]
 
+        # The strike sits at -x and the pickup at +y. -x rather than +x because
+        # the slit preset removes |dy| < 2 for dx > 0, which is exactly where a
+        # +x strike lands: every strike was zeroed as it was written and that
+        # preset made no sound at all. Every other preset is mirror-symmetric in
+        # x and the pickup is on the mirror axis, so the move is bit-exact for
+        # them.
         strike_node = Signal(AW)
         pickup_node = Signal(AW)
         m.d.comb += [
-            strike_node.eq(cy * n + cx + strike_r),
+            strike_node.eq(cy * n + cx - strike_r),
             pickup_node.eq((cy + pickup_r) * n + cx),
         ]
 

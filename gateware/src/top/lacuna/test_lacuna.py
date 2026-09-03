@@ -72,7 +72,7 @@ def reference(preset, tension_cv, samples, strike_cv=0):
         base = ((lap * lam) >> LAM_FRAC) + (u << 1) - up
         nxt = base - (base >> loss)
         if k == 0:
-            nxt[cy, cx + strike_r] += amp
+            nxt[cy, cx - strike_r] += amp
         nxt = np.clip(nxt, LO, HI)
         nxt = np.where(mask, nxt, 0)
         up, u = u, nxt
@@ -141,8 +141,28 @@ def check_tuning():
     return ok
 
 
+
+def check_presets():
+    """Every preset must actually ring.
+
+    The slit preset removes |dy| < 2 for dx > 0, which is where a +x strike
+    lands, so it was silent on hardware and nothing here caught it: the
+    bit-exactness check only ever drove preset 0.
+    """
+    print("\nevery preset fires")
+    ok = True
+    for p in range(len(PRESETS)):
+        peak = max(abs(v) for v in reference(p, 8000, 600))
+        # A preset that cannot excite its own pickup reads exactly zero.
+        live = peak > 0
+        print(f"  preset {p} {str(PRESETS[p]):<24} peak {peak:>8}  "
+              f"{'OK' if live else 'SILENT'}")
+        ok &= live
+    return ok
+
 if __name__ == "__main__":
     tuning_ok = check_tuning()
+    presets_ok = check_presets()
 
     print("\nbit-exactness vs reference")
     all_ok = True
@@ -162,5 +182,6 @@ if __name__ == "__main__":
 
     print(f"\ncycles per sample: {cycles[0]}  (budget 1250 at 60 MHz / 48 kHz)")
     print(f"\ntuning: {'OK' if tuning_ok else 'FAIL'}   "
+          f"presets: {'OK' if presets_ok else 'FAIL'}   "
           f"bit-exact: {'OK' if all_ok else 'FAIL'}   "
           f"budget: {'OK' if cycles[0] < 1250 else 'FAIL'}")
