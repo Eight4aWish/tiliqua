@@ -90,12 +90,14 @@ VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 # fundamental eigenvalue of the discrete Laplacian on each masked domain,
 # computed by tiliqua_mesh/pitch.py -- see the repo this core came from.
 PRESETS = [
-    (14, 0,  0, 0, 36652),    # full disc
-    (14, 3,  0, 0, 14852),    # narrow hole
-    (14, 7,  0, 0,  6330),    # wide ring
-    (14, 11, 0, 0,  1598),    # thin ring
-    (14, 5,  1, 0,  8807),    # square hole
-    (14, 8,  0, 1,  4651),    # slit ring
+    (14,  0, 0, 0, 36410),    # drum head
+    (10,  0, 0, 0, 19196),    # medium head
+    ( 7,  0, 0, 0,  9324),    # small head
+    (14,  3, 0, 0, 14811),    # narrow hole
+    (14,  7, 0, 0,  6410),    # wide ring
+    (14, 11, 0, 0,  1535),    # thin ring
+    (14,  5, 1, 0,  9858),    # square hole
+    (14,  8, 0, 1,  4765),    # slit ring
 ]
 
 
@@ -245,8 +247,10 @@ class Lacuna(wiring.Component):
         g_slit   = Signal()
         outer2   = Signal(unsigned(16))
         inner2   = Signal(unsigned(16))
+        g_nohole = Signal()
         m.d.sync += [g_inner.eq(g1_inner), g_outer.eq(g1_outer),
                      g_square.eq(g1_square), g_slit.eq(g1_slit),
+                     g_nohole.eq(g1_inner == 0),
                      outer2.eq(g1_outer * g1_outer),
                      inner2.eq(g1_inner * g1_inner)]
 
@@ -328,7 +332,12 @@ class Lacuna(wiring.Component):
                          & (dy < g_inner.as_signed()) & (dy > -g_inner.as_signed())),
             in_slit.eq((dy < 2) & (dy > -2) & (dx > 0)),
             inside.eq((d2 <= outer2)
-                      & Mux(g_square, ~in_square, d2 > inner2)
+                      # inner == 0 means a solid head. Without the guard the
+                      # test is d2 > 0, which punches a one-cell hole through
+                      # dead centre -- exactly the fundamental's antinode, and
+                      # enough to pull a full disc nearly three semitones sharp
+                      # and wreck its mode ratios.
+                      & Mux(g_square, ~in_square, g_nohole | (d2 > inner2))
                       & ~(g_slit & in_slit)),
         ]
 

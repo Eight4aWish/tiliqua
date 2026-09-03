@@ -49,7 +49,7 @@ def reference(preset, tension_cv, samples, strike_cv=0):
     mask = d2 <= outer * outer
     if square:
         mask &= ~((np.abs(dx) < inner) & (np.abs(dy) < inner))
-    else:
+    elif inner > 0:
         mask &= d2 > inner * inner
     if slit:
         mask &= ~((np.abs(dy) < 2) & (dx > 0))
