@@ -210,9 +210,35 @@ class Lacuna(wiring.Component):
         with m.Else():
             m.d.comb += inner_c.eq(inner_eff)
 
-        outer2 = Signal(unsigned(16))
-        inner2 = Signal(unsigned(16))
-        m.d.comb += [outer2.eq(outer * outer), inner2.eq(inner_c * inner_c)]
+        # Geometry is a per-sample quantity -- it is constant across all cells
+        # of a scan -- but the mask consumes it once per node, so left
+        # combinational the whole chain
+        #
+        #     preset_i -> inner + fm -> clamp -> inner_c^2 -> d2 > inner2 -> mask
+        #
+        # lands in a single cycle: 19.2 ns, against 16.7 ns at 60 MHz. Two
+        # register stages move the multiply and the preset mux off the per-node
+        # path. Everything the scan reads comes from stage 2, so the radii, the
+        # squared radii and the shape flags stay coherent with each other; a
+        # geometry change now takes effect 2 cycles later, out of the 1035 in a
+        # sample period.
+        g1_inner  = Signal(unsigned(6))
+        g1_outer  = Signal(unsigned(6))
+        g1_square = Signal()
+        g1_slit   = Signal()
+        m.d.sync += [g1_inner.eq(inner_c), g1_outer.eq(outer),
+                     g1_square.eq(square_hole), g1_slit.eq(slit)]
+
+        g_inner  = Signal(unsigned(6))
+        g_outer  = Signal(unsigned(6))
+        g_square = Signal()
+        g_slit   = Signal()
+        outer2   = Signal(unsigned(16))
+        inner2   = Signal(unsigned(16))
+        m.d.sync += [g_inner.eq(g1_inner), g_outer.eq(g1_outer),
+                     g_square.eq(g1_square), g_slit.eq(g1_slit),
+                     outer2.eq(g1_outer * g1_outer),
+                     inner2.eq(g1_inner * g1_inner)]
 
         # Strike and pickup radii follow the live geometry. A pickup at a fixed
         # radius falls inside the hole on the thin-ring preset and reads zero
@@ -222,9 +248,9 @@ class Lacuna(wiring.Component):
         pickup_r = Signal(unsigned(6))
         strike_raw = Signal(unsigned(7))
         m.d.comb += [
-            strike_raw.eq(inner_c + 1 + strike_cv),
-            strike_r.eq(Mux(strike_raw > outer - 1, outer - 1, strike_raw)),
-            pickup_r.eq((inner_c + outer) >> 1),
+            strike_raw.eq(g_inner + 1 + strike_cv),
+            strike_r.eq(Mux(strike_raw > g_outer - 1, g_outer - 1, strike_raw)),
+            pickup_r.eq((g_inner + g_outer) >> 1),
         ]
 
         # --- tension ------------------------------------------------------------
@@ -233,9 +259,16 @@ class Lacuna(wiring.Component):
         cv_index = Signal(CV_BITS)
         octave = Signal(range(OCTAVES))
 
+        # tune_rd.data is a BRAM output (5.6 ns clk-to-q) and inv_mu comes off
+        # the preset mux, so feeding both into a multiplier and then straight
+        # into the clamp below put ~19 ns of logic in one cycle -- on its own
+        # enough to miss 60 MHz. Registering the product splits that in half at
+        # a cost of one extra state in the FSM below.
+        lam_prod = Signal(unsigned(K_FRAC + 17))
+        m.d.sync += lam_prod.eq(tune_rd.data * inv_mu)
+
         lam_wide = Signal(unsigned(K_FRAC + 17))
-        m.d.comb += lam_wide.eq((tune_rd.data * inv_mu)
-                                >> (K_FRAC + INV_MU_FRAC - LAM_FRAC))
+        m.d.comb += lam_wide.eq(lam_prod >> (K_FRAC + INV_MU_FRAC - LAM_FRAC))
 
         # --- scan ---------------------------------------------------------------
         DRAIN = 8
@@ -271,12 +304,12 @@ class Lacuna(wiring.Component):
         in_square = Signal()
         in_slit = Signal()
         m.d.comb += [
-            in_square.eq((dx < inner_c.as_signed()) & (dx > -inner_c.as_signed())
-                         & (dy < inner_c.as_signed()) & (dy > -inner_c.as_signed())),
+            in_square.eq((dx < g_inner.as_signed()) & (dx > -g_inner.as_signed())
+                         & (dy < g_inner.as_signed()) & (dy > -g_inner.as_signed())),
             in_slit.eq((dy < 2) & (dy > -2) & (dx > 0)),
             inside.eq((d2 <= outer2)
-                      & Mux(square_hole, ~in_square, d2 > inner2)
-                      & ~(slit & in_slit)),
+                      & Mux(g_square, ~in_square, d2 > inner2)
+                      & ~(g_slit & in_slit)),
         ]
 
         strike_node = Signal(AW)
@@ -398,12 +431,17 @@ class Lacuna(wiring.Component):
                     m.next = "TUNE"
 
             with m.State("TUNE"):
-                # One cycle for the table read, one for the multiply, then the
-                # damping shift follows the octave so decay per cycle stays put.
+                # One cycle for the table read, one for the multiply, one for
+                # the clamp, then the damping shift follows the octave so decay
+                # per cycle stays put.
                 m.d.sync += octave.eq(cv_index[CV_BITS - 2:])
                 m.next = "TUNE2"
 
             with m.State("TUNE2"):
+                # Nothing to do but let lam_prod register the multiply.
+                m.next = "TUNE3"
+
+            with m.State("TUNE3"):
                 m.d.sync += [
                     lam2.eq(Mux(lam_wide > LAM_MAX, LAM_MAX, lam_wide)),
                     loss_shift.eq(self.base_loss + (OCTAVES - 1 - octave)),
