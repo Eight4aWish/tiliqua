@@ -104,6 +104,42 @@ python weird_frames.py   # renders the grid above
 The boundary is just a boolean array, so any bitmap is a valid instrument. That
 is the part with no analogue on a sampler or a modal synth.
 
+## The annulus, explored
+
+The annulus turned out to be the most interesting of the five, so `annulus.py`
+maps its space. The mask is two radius comparisons, which on hardware is two
+registers -- so every variant here is a CV input, not a rebuild.
+
+![annulus family](annulus_family.png)
+
+*Rows: thin ring, wide ring, offset hole, square hole, slit ring. Columns at
+0.3 to 35 ms.*
+
+| variant | f0 | partials |
+|---|---|---|
+| thin ring | 2962 Hz | 1.00 1.08 1.13 1.20 1.91 |
+| wide ring | 953 Hz | 1.00 1.14 1.46 1.86 2.08 |
+| narrow hole | 664 Hz | 1.00 1.39 2.03 2.65 3.29 |
+| offset hole | 952 Hz | 1.00 1.13 1.25 1.99 2.27 |
+| square hole | 873 Hz | 1.00 1.14 1.57 1.98 2.80 |
+| slit ring | 1175 Hz | 1.00 1.15 1.41 1.71 1.97 |
+
+Note how far these are from the circular membrane's 1.00 1.59 2.14 2.30: the
+hole is a second boundary, and the partial structure it produces has no simple
+description. A thin ring is a bar bent into a circle and pitches an octave and
+a half above a wide one.
+
+`a7_hole_opening.wav` is the one with no physical counterpart: the hole opens
+from radius 4 to 20 *while the surface is ringing*, so the instrument morphs
+continuously rather than being retuned between hits.
+
+![morph](annulus_morph.png)
+
+**Watch the pickup point.** A pickup or strike coordinate that falls inside the
+hole reads zero forever, which looks exactly like a dead model -- it silenced
+the thin ring completely and killed the last quarter of the morph before
+`check_on_material()` was added to catch it.
+
 ## Status and what is still open
 
 - Frequency-dependent damping is **not implemented**. Without it every mode
