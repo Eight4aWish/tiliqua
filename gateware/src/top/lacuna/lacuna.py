@@ -255,6 +255,7 @@ class Lacuna(wiring.Component):
         ]
 
         # --- tension ------------------------------------------------------------
+        tension_q = Signal(signed(16))
         lam2 = Signal(unsigned(LAM_FRAC))
         loss_shift = Signal(range(24))
         cv_index = Signal(CV_BITS)
@@ -415,24 +416,32 @@ class Lacuna(wiring.Component):
                     m.d.sync += gate_prev.eq(gate > 4000)
                     with m.If((gate > 4000) & ~gate_prev):
                         m.d.sync += strike_pending.eq(1)
-                    # 1 V/oct: 1 V is 4000 counts (4 counts/mV, ASQ full scale is
-                    # 8.192 V) and the table is 256 steps to the octave, so a volt
-                    # has to buy 256 steps. A plain >>4 buys 250 and runs ~40 cents
-                    # flat per volt, compounding to about a semitone at 4 V. The
-                    # rounding term keeps 1 V landing on 256 rather than 255.
-                    idx = Signal(signed(20))
-                    m.d.comb += idx.eq((tension * VOCT_Q16 + (1 << 15)) >> 16)
-                    with m.If(idx < 0):
-                        m.d.sync += cv_index.eq(0)
-                    with m.Elif(idx > (1 << CV_BITS) - 1):
-                        m.d.sync += cv_index.eq((1 << CV_BITS) - 1)
-                    with m.Else():
-                        m.d.sync += cv_index.eq(idx)
                     m.d.sync += [
                         strike_cv.eq(pos[10:14]),
                         fm.eq(_raw(self.i.payload[3])),
+                        tension_q.eq(tension),
                     ]
-                    m.next = "TUNE"
+                    m.next = "IDX"
+
+            with m.State("IDX"):
+                # 1 V/oct: 1 V is 4000 counts (4 counts/mV, ASQ full scale is
+                # 8.192 V) and the table is 256 steps to the octave, so a volt has
+                # to buy 256 steps. A plain >>4 buys 250 and runs ~28 cents flat
+                # per volt, compounding to about a semitone at 4 V. The rounding
+                # term keeps 1 V landing on 256 rather than 255.
+                #
+                # This gets its own state because tension arrives from the CODEC
+                # calibrator: calibrator -> multiply -> clamp -> cv_index in one
+                # cycle is ~17.5 ns and misses 60 MHz on its own.
+                idx = Signal(signed(20))
+                m.d.comb += idx.eq((tension_q * VOCT_Q16 + (1 << 15)) >> 16)
+                with m.If(idx < 0):
+                    m.d.sync += cv_index.eq(0)
+                with m.Elif(idx > (1 << CV_BITS) - 1):
+                    m.d.sync += cv_index.eq((1 << CV_BITS) - 1)
+                with m.Else():
+                    m.d.sync += cv_index.eq(idx)
+                m.next = "TUNE"
 
             with m.State("TUNE"):
                 # One cycle for the table read, one for the multiply, one for
