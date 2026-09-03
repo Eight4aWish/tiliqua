@@ -14,6 +14,11 @@ STRIKE_A, STRIKE_B = 0, 60
 TOTAL = 130
 
 
+def _set_raw(ctx, port, v):
+    """Mirror of mesh_core._raw: write raw bits whether ASQ is fixed or plain."""
+    ctx.set(port.as_value() if hasattr(port, "as_value") else port, v)
+
+
 def run(preset_cv_after):
     dut = Mesh(n=N, loss_shift=13, presets=PRESETS)
     sim = Simulator(dut)
@@ -26,10 +31,10 @@ def run(preset_cv_after):
             gate = 8000 if k in (STRIKE_A, STRIKE_B) else 0
             # Preset CV changes one sample before the second strike.
             pre = preset_cv_after if k >= STRIKE_B - 1 else 0
-            ctx.set(dut.i.payload[0], gate)
-            ctx.set(dut.i.payload[1], 0)
-            ctx.set(dut.i.payload[2], pre)
-            ctx.set(dut.i.payload[3], 0)
+            _set_raw(ctx, dut.i.payload[0], gate)
+            _set_raw(ctx, dut.i.payload[1], 0)
+            _set_raw(ctx, dut.i.payload[2], pre)
+            _set_raw(ctx, dut.i.payload[3], 0)
             ctx.set(dut.i.valid, 1)
             while not (ctx.get(dut.i.valid) and ctx.get(dut.i.ready)):
                 await ctx.tick()
@@ -79,10 +84,10 @@ def run_switch_only(cv_at):
     async def tb(ctx):
         ctx.set(dut.o.ready, 1)
         for k in range(TOTAL):
-            ctx.set(dut.i.payload[0], 8000 if k == 0 else 0)
-            ctx.set(dut.i.payload[1], 0)
-            ctx.set(dut.i.payload[2], 4096 if (cv_at is not None and k >= cv_at) else 0)
-            ctx.set(dut.i.payload[3], 0)
+            _set_raw(ctx, dut.i.payload[0], 8000 if k == 0 else 0)
+            _set_raw(ctx, dut.i.payload[1], 0)
+            _set_raw(ctx, dut.i.payload[2], 4096 if (cv_at is not None and k >= cv_at) else 0)
+            _set_raw(ctx, dut.i.payload[3], 0)
             ctx.set(dut.i.valid, 1)
             while not (ctx.get(dut.i.valid) and ctx.get(dut.i.ready)):
                 await ctx.tick()

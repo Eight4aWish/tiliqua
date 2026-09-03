@@ -19,6 +19,11 @@ SAMPLES = 120
 HI, LO = (1 << (WIDTH - 1)) - 1, -(1 << (WIDTH - 1))
 
 
+def _set_raw(ctx, port, v):
+    """Mirror of mesh_core._raw: write raw bits whether ASQ is fixed or plain."""
+    ctx.set(port.as_value() if hasattr(port, "as_value") else port, v)
+
+
 def reference(n, outer, inner, loss, strike_node, samples):
     cx = cy = n // 2
     yy, xx = np.ogrid[:n, :n]
@@ -59,10 +64,10 @@ def run_gateware(samples):
     async def tb(ctx):
         ctx.set(dut.o.ready, 1)
         for k in range(samples):
-            ctx.set(dut.i.payload[0], 8000 if k == 0 else 0)   # strike gate
-            ctx.set(dut.i.payload[1], 0)                       # position
-            ctx.set(dut.i.payload[2], 0)                       # preset
-            ctx.set(dut.i.payload[3], 0)                       # geom FM
+            _set_raw(ctx, dut.i.payload[0], 8000 if k == 0 else 0)   # strike gate
+            _set_raw(ctx, dut.i.payload[1], 0)                       # position
+            _set_raw(ctx, dut.i.payload[2], 0)                       # preset
+            _set_raw(ctx, dut.i.payload[3], 0)                       # geom FM
             ctx.set(dut.i.valid, 1)
             while not (ctx.get(dut.i.valid) and ctx.get(dut.i.ready)):
                 await ctx.tick()
