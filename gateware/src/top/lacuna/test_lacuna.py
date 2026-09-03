@@ -15,10 +15,11 @@ import numpy as np
 from amaranth.sim import Simulator
 
 from lacuna import (Lacuna, tuning_table, PRESETS, WIDTH, FRAC, LAM_FRAC,
-                    K_FRAC, INV_MU_FRAC, LAM_MAX, CV_BITS, OCTAVES, F_LO, FS)
+                    K_FRAC, INV_MU_FRAC, LAM_MAX, CV_BITS, OCTAVES, F_LO, FS,
+                    VOCT_Q16)
 
 N = 32
-BASE_LOSS = 14
+BASE_LOSS = 13
 HI, LO = (1 << (WIDTH - 1)) - 1, -(1 << (WIDTH - 1))
 TABLE = tuning_table()
 
@@ -30,13 +31,13 @@ def _set_raw(ctx, port, v):
 
 def controls(tension_cv, preset):
     """Mirror the core's per-sample control arithmetic exactly."""
-    idx = tension_cv >> 4
+    idx = (tension_cv * VOCT_Q16 + (1 << 15)) >> 16
     idx = max(0, min((1 << CV_BITS) - 1, idx))
     inv_mu = PRESETS[preset][4]
     lam = (TABLE[idx] * inv_mu) >> (K_FRAC + INV_MU_FRAC - LAM_FRAC)
     lam = min(lam, LAM_MAX)
     octave = idx >> (CV_BITS - 2)
-    return lam, BASE_LOSS + (OCTAVES - 1 - octave)
+    return lam, BASE_LOSS + ((OCTAVES - 1 - octave) >> 1)
 
 
 def reference(preset, tension_cv, samples, strike_cv=0):

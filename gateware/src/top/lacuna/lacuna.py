@@ -84,6 +84,7 @@ LAM_MAX = 1 << (LAM_FRAC - 1)   # lam2 = 0.5, the stability limit
 FS = 48000
 F_LO, OCTAVES = 55.0, 4       # 55-880 Hz; 880 is under every preset's limit
 CV_BITS = 10                  # 1024 steps over 4 octaves, ~4.7 cents each
+VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 
 # (outer, inner, square_hole, slit, inv_mu_q). The inv_mu values are the
 # fundamental eigenvalue of the discrete Laplacian on each masked domain,
@@ -129,7 +130,7 @@ class Lacuna(wiring.Component):
         io_right=['preset', '', '', '', '', '']
     )
 
-    def __init__(self, n=32, base_loss=14, presets=PRESETS):
+    def __init__(self, n=32, base_loss=13, presets=PRESETS):
         assert n % 2 == 0
         self.n = n
         self.base_loss = base_loss
@@ -414,10 +415,13 @@ class Lacuna(wiring.Component):
                     m.d.sync += gate_prev.eq(gate > 4000)
                     with m.If((gate > 4000) & ~gate_prev):
                         m.d.sync += strike_pending.eq(1)
-                    # 1 V/oct: 1 V is 4000 counts at 8.192 V full scale, and the
-                    # table spans 4 octaves in 1024 steps, so 4 V maps across it.
+                    # 1 V/oct: 1 V is 4000 counts (4 counts/mV, ASQ full scale is
+                    # 8.192 V) and the table is 256 steps to the octave, so a volt
+                    # has to buy 256 steps. A plain >>4 buys 250 and runs ~40 cents
+                    # flat per volt, compounding to about a semitone at 4 V. The
+                    # rounding term keeps 1 V landing on 256 rather than 255.
                     idx = Signal(signed(20))
-                    m.d.comb += idx.eq(tension >> 4)
+                    m.d.comb += idx.eq((tension * VOCT_Q16 + (1 << 15)) >> 16)
                     with m.If(idx < 0):
                         m.d.sync += cv_index.eq(0)
                     with m.Elif(idx > (1 << CV_BITS) - 1):
@@ -444,7 +448,7 @@ class Lacuna(wiring.Component):
             with m.State("TUNE3"):
                 m.d.sync += [
                     lam2.eq(Mux(lam_wide > LAM_MAX, LAM_MAX, lam_wide)),
-                    loss_shift.eq(self.base_loss + (OCTAVES - 1 - octave)),
+                    loss_shift.eq(self.base_loss + ((OCTAVES - 1 - octave) >> 1)),
                     j.eq(0), jx.eq(0), jy.eq(0),
                 ]
                 m.next = "SCAN"
