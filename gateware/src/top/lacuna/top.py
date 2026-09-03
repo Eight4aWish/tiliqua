@@ -123,11 +123,12 @@ class LacunaTop(Elaboratable):
         # blue and red, so what you see is the mode pattern rather than just a
         # brightness envelope. A little green either side lifts the peaks
         # towards white so a loud strike does not clip to a flat primary.
-        # Measured on a capture card: source 16 renders as 7 and source 48 as
-        # 44, so the chain crushes below ~10 and adds a little gain above it.
-        # 32 lands near 25 -- the plate reads clearly against black without
-        # drawing the eye away from the mesh.
-        OUTSIDE = 32
+        # Black. The plate was drawn as a dim field so the geometry showed even
+        # in silence, but on screen the mesh's own activity marks out the shape
+        # perfectly well, and the field only competed with it. The cost is that
+        # a silent mesh is a black screen and the preset is unreadable until
+        # something rings.
+        OUTSIDE = 0
         v = core.disp_data
         mag = Signal(unsigned(8))
         pos = Signal()
