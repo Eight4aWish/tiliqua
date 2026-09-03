@@ -214,7 +214,12 @@ class Lacuna(wiring.Component):
         fm = Signal(signed(16))
         inner_eff = Signal(signed(8))
         inner_c = Signal(unsigned(6))
-        m.d.comb += inner_eff.eq(inner + (fm >> 12))
+        # Round to nearest, not floor. `fm >> 12` on a signed value floors
+        # toward -inf, so a single negative ADC count -- which is what an idle
+        # jack reads -- already subtracted a whole cell from the hole radius,
+        # while the positive side needed a full volt to add one. The rounding
+        # term puts a symmetric +/- 0.5 V dead zone around zero instead.
+        m.d.comb += inner_eff.eq(inner + ((fm + (1 << 11)) >> 12))
         with m.If(inner_eff < 0):
             m.d.comb += inner_c.eq(0)
         with m.Elif(inner_eff > outer - 2):
@@ -498,7 +503,12 @@ class Lacuna(wiring.Component):
                     with m.If((gate > 4000) & ~gate_prev):
                         m.d.sync += strike_pending.eq(1)
                     m.d.sync += [
-                        strike_cv.eq(pos[10:14]),
+                        # pos is signed, so a bare bit-slice reads 15 -- hard
+                        # rim, the loudest and most inharmonic strike there is --
+                        # for an idle jack sitting one count below zero, and
+                        # folds back around above 4 V. Clamp both ends.
+                        strike_cv.eq(Mux(pos < 0, 0,
+                                     Mux(pos > 16383, 15, pos[10:14]))),
                         fm.eq(_raw(self.i.payload[3])),
                         tension_q.eq(tension),
                     ]

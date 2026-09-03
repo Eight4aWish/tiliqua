@@ -123,7 +123,10 @@ class LacunaTop(Elaboratable):
         # blue and red, so what you see is the mode pattern rather than just a
         # brightness envelope. A little green either side lifts the peaks
         # towards white so a loud strike does not clip to a flat primary.
-        OUTSIDE = 16
+        # 16 is the black level of a limited-range video signal, so a capture
+        # card renders it as ~7 and the plate outline all but vanishes. 48 sits
+        # clear of black without competing with the mesh.
+        OUTSIDE = 48
         v = core.disp_data
         mag = Signal(unsigned(8))
         pos = Signal()
