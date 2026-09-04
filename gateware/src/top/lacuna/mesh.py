@@ -77,7 +77,7 @@ class Mesh(wiring.Component):
 
     """One membrane. Pulse `step` to advance it by one update."""
 
-    def __init__(self, n=32, presets=PRESETS, video=False):
+    def __init__(self, n=32, presets=PRESETS, video=False, snapshot=False):
         assert n % 2 == 0
         self.n = n
         # `video`: also keep an 8-bit snapshot of the mesh for the display. It
@@ -86,6 +86,11 @@ class Mesh(wiring.Component):
         # so the core still elaborates where there is no `dvi` domain -- the
         # standalone tests, and any audio-only top level.
         self.video = video
+        # `snapshot`: keep a 16-bit copy of the mesh readable from the audio
+        # domain. ORBITA scans a path through it at audio rate; the display
+        # snapshot above is a separate, narrower memory in the `dvi` domain
+        # because a BRAM has two ports and the writer already holds one.
+        self.snapshot = snapshot
         self.presets = presets
         for outer, _, _, _, _ in presets:
             assert outer <= n // 2 - 2, (
@@ -105,11 +110,18 @@ class Mesh(wiring.Component):
             # --- excitation ---
             "strike":     In(1),      # pulse: strike on the next update
             "strike_cv":  In(4),      # hub..rim across the available span
+            # How hard. A one-shot pluck is a single pulse at full amplitude; a
+            # drone is a small amplitude pulsed every update, which is what
+            # keeps a lossy membrane alive without letting it run away.
+            "strike_amp": In(signed(WIDTH + 4)),
             # --- what comes out ---
             "pickup":     Out(signed(WIDTH)),
             # --- display snapshot, read from the `dvi` domain ---
             "disp_addr":  In(range(n * n)),
             "disp_data":  Out(8),
+            # --- wide snapshot, read from the audio domain ---
+            "snap_addr":  In(range(n * n)),
+            "snap_data":  Out(signed(16)),
         })
 
     def elaborate(self, platform):
@@ -325,11 +337,10 @@ class Mesh(wiring.Component):
 
         base = Signal(signed(WIDTH + 4))
         nxt = Signal(signed(WIDTH + 4))
-        strike_amp = C(int(0.9 * (1 << FRAC)), signed(WIDTH + 4))
         m.d.comb += [
             base.eq((prod_r >> LAM_FRAC) + (cen3 << 1) - old_al),
             nxt.eq(base - (base >> self.loss_shift)
-                   + Mux(strk_al, strike_amp, 0)),
+                   + Mux(strk_al, self.strike_amp, 0)),
         ]
 
         # Saturate rather than truncate: wrapping a node turns a loud hit into a
@@ -398,6 +409,27 @@ class Mesh(wiring.Component):
             m.d.comb += [
                 disp_rd.addr.eq(self.disp_addr),
                 self.disp_data.eq(disp_rd.data),
+            ]
+
+        # --- wide snapshot ------------------------------------------------
+        # The same free copy as the display tap, but 16 bits and read from the
+        # audio domain: ORBITA indexes it with a circle ROM to scan a closed
+        # path through the membrane at audio rate. Cells outside the membrane
+        # were written as 0, so a scan path that strays into the hole or past
+        # the rim reads silence, which is the behaviour we want.
+        if self.snapshot:
+            m.submodules.snap = snap = Memory(
+                shape=signed(16), depth=cells, init=[0] * cells)
+            snap_wr = snap.write_port()
+            m.d.comb += [
+                snap_wr.addr.eq(wr_addr),
+                snap_wr.data.eq(written >> (WIDTH - 16)),
+                snap_wr.en.eq(wr_valid),
+            ]
+            snap_rd = snap.read_port()
+            m.d.comb += [
+                snap_rd.addr.eq(self.snap_addr),
+                self.snap_data.eq(snap_rd.data),
             ]
 
         with m.If(wr_valid & (wr_addr == pickup_node)):

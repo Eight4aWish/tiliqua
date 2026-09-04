@@ -105,6 +105,8 @@ class Lacuna(wiring.Component):
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),
             self.pickup_dbg.eq(mesh.pickup),
+            # A struck instrument: one pulse, near full scale.
+            mesh.strike_amp.eq(C(int(0.9 * (1 << FRAC)), signed(WIDTH + 4))),
         ]
 
         m.submodules.tuning = tuning = Memory(
