@@ -1,7 +1,13 @@
-# Scan — the mesh as a wavetable, not as a drum
+# ORBITA — the mesh as a wavetable, not as a drum
 
-Design note, started 2026-09-03, path topology settled 2026-09-04.
+Design note, started 2026-09-03, path topology and name settled 2026-09-04.
 Nothing here is built yet.
+
+**ORBITA** — Latin for a wheel-track or circuit, from *orbis*, a circle; the
+ancestor of "orbit", and it names the path traced rather than the shape. It also
+carries the sense of a rut worn by repeated passage, which suits something going
+round the same circle a couple of hundred times a second. Sits next to LACUNA in
+the bootloader as its counterpart: the gap, and the circuit around it.
 
 ## The idea
 
@@ -158,7 +164,7 @@ interpolation) and a few hundred LUTs.
 - **Hard edges at slit and corner crossings.** A notch is a step into zero and
   back, which is bright. That is the point, but it may want slewing — worth
   hearing first.
-- **Where it lives.** A separate top-level (`top/scan/`) reusing a factored-out
+- **Where it lives.** A separate top-level (`top/orbita/`) reusing a factored-out
   mesh module, rather than a mode inside lacuna — it is a different instrument.
   All eight flash slots are currently full, so something has to give.
 
