@@ -70,9 +70,22 @@ CIRC_SCALE = 6                # unit vectors stored as cos*64
 UPDATE_DIV = 64
 UPDATE_RATE = FS / UPDATE_DIV
 
-# Target fundamental for the membrane's own motion, in Hz, at UPDATE_RATE. This
-# is the rate at which the wavetable morphs.
-F_EVOLVE = 8.0
+# Target fundamental for the membrane's own motion, in Hz, at UPDATE_RATE, and
+# the rate at which the wavetable morphs.
+#
+# This has to put the *whole* membrane below hearing, not just its fundamental,
+# or its high modes ring audibly in their own right and are heard as noise on
+# top of the scanned tone. The highest mode is about 17x the fundamental, so:
+#
+#     F_EVOLVE   fundamental   10th mode   checkerboard
+#          8.0        8.0 Hz     23.2 Hz       143.4 Hz   <- audible membrane
+#          2.0        2.0 Hz      5.8 Hz        33.8 Hz
+#          1.0        1.0 Hz      2.9 Hz        16.9 Hz   <- all sub-audio
+#
+# 1 Hz means a held note morphs over about a second, which is what scanned
+# synthesis is for. Faster than this and you are listening to the membrane
+# rather than to the shape it makes.
+F_EVOLVE = 1.0
 
 K_FRAC = 30
 INV_MU_FRAC = 10

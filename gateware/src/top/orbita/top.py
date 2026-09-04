@@ -13,8 +13,16 @@ timbre. See research/scan/DESIGN.md.
 .. code-block:: bash
 
    # from the `gateware` directory
-   pdm orbita build --modeline 1280x720p60
+   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
+       pdm orbita build --modeline 1280x720p60
    pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
+
+The seed matters. This design sits close enough to the routing limit that the
+1280x720 serialiser's 371 MHz closes on some placements and not others -- it
+has come out anywhere between 299 and 470 MHz on changes that cannot affect it,
+such as a constant in the tuning table. Seeds 1, 2 and 3 all close comfortably.
+The environment override is used rather than editing tiliqua's own cli.py,
+which would be a permanent rebase conflict against upstream.
 
 The display draws the membrane exactly as LACUNA does, and overlays the scan
 circle on it, so you can see the path the waveform is being read from and where
