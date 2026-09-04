@@ -272,8 +272,11 @@ class Lacuna(wiring.Component):
         # of the sweep did anything, and on the thin ring a single step of it
         # did. Scaling by the span keeps a full hub-to-rim sweep on every
         # preset, and tracks as in3 opens the hole underneath it.
+        # Registered: a per-sample value like the rest of the geometry, and
+        # leaving it combinational put g_inner -> subtract -> multiply -> clamp
+        # into one cycle, which took the sync domain under 60 MHz on its own.
         span = Signal(unsigned(6))
-        m.d.comb += span.eq(g_outer - g_inner - 1)
+        m.d.sync += span.eq(g_outer - g_inner - 1)
         m.d.comb += [
             strike_raw.eq(g_inner + 1 + ((strike_cv * span) >> 4)),
             strike_r.eq(Mux(strike_raw > g_outer - 1, g_outer - 1, strike_raw)),
