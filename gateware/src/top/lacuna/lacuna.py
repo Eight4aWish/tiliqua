@@ -266,8 +266,16 @@ class Lacuna(wiring.Component):
         strike_r = Signal(unsigned(6))
         pickup_r = Signal(unsigned(6))
         strike_raw = Signal(unsigned(7))
+        # in2 sweeps the strike across whatever radial room the geometry leaves,
+        # rather than being an offset added to the hole edge. As an offset it
+        # clamped against the rim almost at once: on the wide ring only a third
+        # of the sweep did anything, and on the thin ring a single step of it
+        # did. Scaling by the span keeps a full hub-to-rim sweep on every
+        # preset, and tracks as in3 opens the hole underneath it.
+        span = Signal(unsigned(6))
+        m.d.comb += span.eq(g_outer - g_inner - 1)
         m.d.comb += [
-            strike_raw.eq(g_inner + 1 + strike_cv),
+            strike_raw.eq(g_inner + 1 + ((strike_cv * span) >> 4)),
             strike_r.eq(Mux(strike_raw > g_outer - 1, g_outer - 1, strike_raw)),
             pickup_r.eq((g_inner + g_outer) >> 1),
         ]
@@ -352,9 +360,13 @@ class Lacuna(wiring.Component):
         # preset made no sound at all. Every other preset is mirror-symmetric in
         # x and the pickup is on the mirror axis, so the move is bit-exact for
         # them.
+        # Registered: both are per-sample values, but they are compared against
+        # `j` once per node, so leaving them combinational puts the strike
+        # multiply above on the per-node path. They settle during TUNE, long
+        # before SCAN reads them.
         strike_node = Signal(AW)
         pickup_node = Signal(AW)
-        m.d.comb += [
+        m.d.sync += [
             strike_node.eq(cy * n + cx - strike_r),
             pickup_node.eq((cy + pickup_r) * n + cx),
         ]
