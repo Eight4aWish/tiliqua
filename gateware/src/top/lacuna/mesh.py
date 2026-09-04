@@ -137,6 +137,11 @@ class Mesh(wiring.Component):
             # actually exists rather than across absolute cell counts.
             "geo_inner":  Out(6),
             "geo_outer":  Out(6),
+            # Where the strike lands and where the pickup listens, as cell
+            # addresses, so a display can show them. Both move with the live
+            # geometry, which is most of why they are worth seeing.
+            "strike_at":  Out(range(n * n)),
+            "pickup_at":  Out(range(n * n)),
             # --- display snapshot, read from the `dvi` domain ---
             "disp_addr":  In(range(n * n)),
             "disp_data":  Out(8),
@@ -238,8 +243,12 @@ class Mesh(wiring.Component):
         strike_raw = Signal(unsigned(7))
         span = Signal(unsigned(6))
         m.d.sync += span.eq(g_outer - g_inner - 1)
+        # strike_raw is registered: span -> multiply -> clamp -> strike_node in
+        # one cycle is ~17 ns and no placer seed closed 60 MHz with it. The
+        # strike node is not compared against `j` until roughly halfway through
+        # a scan, so the extra cycle costs nothing.
+        m.d.sync += strike_raw.eq(g_inner + 1 + ((self.strike_cv * span) >> 4))
         m.d.comb += [
-            strike_raw.eq(g_inner + 1 + ((self.strike_cv * span) >> 4)),
             strike_r.eq(Mux(strike_raw > g_outer - 1, g_outer - 1, strike_raw)),
             pickup_r.eq((g_inner + g_outer) >> 1),
         ]
@@ -480,6 +489,9 @@ class Mesh(wiring.Component):
                 snap_rd.addr.eq(self.snap_addr),
                 self.snap_data.eq(snap_rd.data),
             ]
+
+        m.d.comb += [self.strike_at.eq(strike_node),
+                     self.pickup_at.eq(pickup_node)]
 
         with m.If(wr_valid & (wr_addr == pickup_node)):
             m.d.sync += self.pickup.eq(written)

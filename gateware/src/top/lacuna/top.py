@@ -110,6 +110,24 @@ class LacunaTop(Elaboratable):
 
         # Whether the pixel being coloured now -- one behind the address -- is
         # inside the mesh square.
+        # --- strike and pickup markers ----------------------------------------
+        # Where the strike lands is a control you cannot otherwise see, and it
+        # moves with in2 and with the geometry underneath it. Both cross from
+        # the audio domain and only change once per sample; a torn value would
+        # show as one frame with a marker a cell out.
+        strike_dvi = Signal(range(n * n))
+        pickup_dvi = Signal(range(n * n))
+        m.submodules.strike_cdc = FFSynchronizer(
+                core.strike_at, strike_dvi, o_domain="dvi")
+        m.submodules.pickup_cdc = FFSynchronizer(
+                core.pickup_at, pickup_dvi, o_domain="dvi")
+        at_strike = Signal()
+        at_pickup = Signal()
+        m.d.dvi += [
+            at_strike.eq(Cat(cx, cy) == strike_dvi),
+            at_pickup.eq(Cat(cx, cy) == pickup_dvi),
+        ]
+
         on_mesh = Signal()
         on_mesh_q = Signal()
         m.d.comb += on_mesh.eq((xn >= x0) & (xn < x0 + side) &
@@ -141,7 +159,13 @@ class LacunaTop(Elaboratable):
             pos.eq(v >= 128),
             mag.eq(Mux(pos, (v - 128) << 1, (128 - v) << 1)),
         ]
-        with m.If(~on_mesh_q):
+        with m.If(on_mesh_q & at_strike):
+            # Green: where the next strike will land.
+            m.d.comb += [r.eq(0), g.eq(255), b.eq(60)]
+        with m.Elif(on_mesh_q & at_pickup):
+            # Amber, dimmer: where the output is listened from.
+            m.d.comb += [r.eq(190), g.eq(120), b.eq(0)]
+        with m.Elif(~on_mesh_q):
             m.d.comb += [r.eq(0), g.eq(0), b.eq(0)]
         with m.Elif(outside):
             m.d.comb += [r.eq(OUTSIDE), g.eq(OUTSIDE), b.eq(OUTSIDE)]

@@ -94,6 +94,8 @@ class Lacuna(wiring.Component):
             # Display tap, read from the `dvi` domain. Reads 0 unless `video`.
             "disp_addr": In(range(n * n)),
             "disp_data": Out(8),
+            "strike_at": Out(range(n * n)),
+            "pickup_at": Out(range(n * n)),
         })
 
     def elaborate(self, platform):
@@ -105,6 +107,8 @@ class Lacuna(wiring.Component):
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),
             self.pickup_dbg.eq(mesh.pickup),
+            self.strike_at.eq(mesh.strike_at),
+            self.pickup_at.eq(mesh.pickup_at),
             # A struck instrument: one pulse, near full scale.
             mesh.strike_amp.eq(C(int(0.9 * (1 << FRAC)), signed(WIDTH + 4))),
         ]
