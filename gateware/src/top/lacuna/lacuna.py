@@ -165,8 +165,20 @@ class Lacuna(wiring.Component):
         lam_wide = Signal(unsigned(K_FRAC + 17))
         m.d.comb += lam_wide.eq(lam_prod >> (K_FRAC + INV_MU_FRAC - LAM_FRAC))
 
+        # Saturate, do not truncate. pickup is 24-bit and the mesh clamps it at
+        # +/-2**23, so pickup >> 7 reaches +/-65535 -- assigning that into a
+        # signed(16) keeps the low bits and wraps, turning a loud moment into a
+        # full-scale flip of the opposite sign. An occasional click that only
+        # happens when it is loud.
         out_payload = Signal(signed(16))
-        m.d.comb += out_payload.eq(mesh.pickup >> (FRAC - 15))
+        out_wide = Signal(signed(20))
+        m.d.comb += out_wide.eq(mesh.pickup >> (FRAC - 15))
+        with m.If(out_wide > 32767):
+            m.d.comb += out_payload.eq(32767)
+        with m.Elif(out_wide < -32768):
+            m.d.comb += out_payload.eq(-32768)
+        with m.Else():
+            m.d.comb += out_payload.eq(out_wide)
 
         # --- sample-rate FSM ------------------------------------------------------
         m.d.comb += tune_rd.addr.eq(cv_index)

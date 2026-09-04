@@ -11,8 +11,16 @@ flash it as follows:
 .. code-block:: bash
 
    # from the `gateware` directory
-   pdm lacuna build --modeline 720x720p60r2
+   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 2" \
+       pdm lacuna build --modeline 720x720p60r2
    pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
+
+The placer seed is pinned. This design sits close enough to the routing limit
+that results vary widely on changes that cannot affect them -- across five
+seeds the sync domain came out between 65.7 and 68.5 MHz and the 371 MHz
+serialiser between 324 and 406, with two seeds failing outright. Seed 2 gives
+the best worst-case margin as it stands; re-check after any change of size.
+ORBITA pins its own, and they are not the same.
 
 The display shows the membrane itself rather than its output waveform: a
 32x32 grid of node values, upscaled and drawn straight from a snapshot the
