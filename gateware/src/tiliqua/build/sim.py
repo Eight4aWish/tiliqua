@@ -221,6 +221,10 @@ def simulate(fragment, ports, harness, hw_platform, clock_settings, tracing=Fals
                            "-Ibuild",
                            "--build",
                            "-j", "0",
+                           # Testbench drivers rely on class template argument
+                           # deduction, which requires C++17. Verilator's default
+                           # standard is older on some toolchains (e.g. Apple clang).
+                           "-CFLAGS", "-std=c++17",
                            "-CFLAGS", f"-DSYNC_CLK_HZ={clock_sync_hz}",
                            "-CFLAGS", f"-DAUDIO_CLK_HZ={audio_clk_hz}",
                            "-CFLAGS", f"-DFAST_CLK_HZ={fast_clk_hz}",
