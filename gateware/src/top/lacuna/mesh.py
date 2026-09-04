@@ -79,6 +79,7 @@ class Mesh(wiring.Component):
 
     def __init__(self, n=32, presets=PRESETS, video=False, snapshot=False,
                  mallet=0):
+        # `mallet` here is the MAXIMUM radius; the live value is an input.
         assert n % 2 == 0
         self.n = n
         # `video`: also keep an 8-bit snapshot of the mesh for the display. It
@@ -121,12 +122,21 @@ class Mesh(wiring.Component):
             # --- excitation ---
             "strike":     In(1),      # pulse: strike on the next update
             "strike_cv":  In(4),      # hub..rim across the available span
+            # Live mallet radius, 0..mallet. Small is a hard stick: bright, and
+            # rough enough to read as noise. Large is a soft mallet: smooth and
+            # dull. It is the same axis, so it belongs on a control.
+            "mallet_r":   In(range(max(2, mallet + 1))),
             # How hard. A one-shot pluck is a single pulse at full amplitude; a
             # drone is a small amplitude pulsed every update, which is what
             # keeps a lossy membrane alive without letting it run away.
             "strike_amp": In(signed(WIDTH + 4)),
             # --- what comes out ---
             "pickup":     Out(signed(WIDTH)),
+            # The live geometry, after the preset and in3 have had their say.
+            # A top level needs it to scale a control across the membrane that
+            # actually exists rather than across absolute cell counts.
+            "geo_inner":  Out(6),
+            "geo_outer":  Out(6),
             # --- display snapshot, read from the `dvi` domain ---
             "disp_addr":  In(range(n * n)),
             "disp_data":  Out(8),
@@ -221,6 +231,8 @@ class Mesh(wiring.Component):
         # `span` is registered because leaving it combinational put
         # g_inner -> subtract -> multiply -> clamp into one cycle, which took the
         # sync domain under 60 MHz on its own.
+        m.d.comb += [self.geo_inner.eq(g_inner), self.geo_outer.eq(g_outer)]
+
         strike_r = Signal(unsigned(6))
         pickup_r = Signal(unsigned(6))
         strike_raw = Signal(unsigned(7))
@@ -345,8 +357,10 @@ class Mesh(wiring.Component):
             adx.eq(Mux(abs(sdx) > M, M + 1, abs(sdx))),
             ady.eq(Mux(abs(sdy) > M, M + 1, abs(sdy))),
         ]
+        msq = Signal(range((M + 2) * (M + 2)))
+        m.d.sync += msq.eq(self.mallet_r * self.mallet_r)
         m.d.comb += strike_hit.eq(strike_pending
-                                  & (MSQ[adx] + MSQ[ady] <= M * M))
+                                  & (MSQ[adx] + MSQ[ady] <= msq))
         with m.If(self.strike):
             m.d.sync += strike_pending.eq(1)
 

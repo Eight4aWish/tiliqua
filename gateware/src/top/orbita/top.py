@@ -13,14 +13,16 @@ timbre. See research/scan/DESIGN.md.
 .. code-block:: bash
 
    # from the `gateware` directory
-   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
+   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 3" \
        pdm orbita build --modeline 1280x720p60
    pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 
 The seed matters. This design sits close enough to the routing limit that the
 1280x720 serialiser's 371 MHz closes on some placements and not others -- it
 has come out anywhere between 299 and 470 MHz on changes that cannot affect it,
-such as a constant in the tuning table. Seeds 1, 2 and 3 all close comfortably.
+such as a constant in the tuning table. Seed 3 gives the most margin as the design stands; 2, 4 and 5 also
+close. Re-check it after any change of size -- seed 1 stopped closing once
+the radius scaling went in.
 The environment override is used rather than editing tiliqua's own cli.py,
 which would be a permanent rebase conflict against upstream.
 
@@ -177,7 +179,7 @@ class OrbitaTop(Elaboratable):
         # crosses from the audio domain; it only changes at sample rate and a
         # torn value would show as one frame of a slightly wrong circle, so a
         # plain synchroniser is enough.
-        radius_dvi = Signal(4)
+        radius_dvi = Signal(6)
         m.submodules.rad_cdc = FFSynchronizer(
                 core.radius_dbg, radius_dvi, o_domain="dvi")
         ddx = Signal(signed(8))
@@ -199,7 +201,7 @@ class OrbitaTop(Elaboratable):
         # Signed and one bit wider: rad_q.as_signed() on a 4-bit value
         # reads 8..15 as negative, so the compare below was never true
         # for any radius past 7 and the overlay simply did not draw.
-        rad_q = Signal(signed(6))
+        rad_q = Signal(signed(8))
         m.d.comb += [
             ddx.eq(cxc - (n // 2)),
             ddy.eq(cyc - (n // 2)),

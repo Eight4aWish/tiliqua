@@ -56,8 +56,13 @@ except ImportError:                       # standalone simulation
 
 
 FS = 48000
-F_LO, OCTAVES = 55.0, 4       # scan rate, 55-880 Hz
-CV_BITS = 10                  # 1024 steps over 4 octaves, ~4.7 cents each
+# Scan rate. Eight octaves at an exact 256 steps each, and offset so that an
+# idle or lightly-driven in1 sits on a musical note rather than on the lowest
+# one available: 0 V is 220 Hz, -3 V reaches 27.5 Hz and +5 V reaches 7040 Hz.
+# The old 55 Hz at 0 V put everything in the bass whatever you patched.
+F_LO, OCTAVES = 27.5, 8
+CV_BITS = 11                  # 2048 steps, 256 to the octave
+PITCH_OFFSET = 3 * 256        # 0 V lands three octaves up, on 220 Hz
 VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 PHASE_BITS = 32
 
@@ -99,12 +104,15 @@ LOSS_SHIFT = 10
 # as anything else -- is heard as noise in the waveform, not just as brightness.
 # Measured on a ring: one cell leaves neighbours agreeing in sign 61% of the
 # time (white noise), radius 3 takes it to 92%.
-MALLET = 3
+MALLET_MAX = 3
 
-# Drive one mesh update in DRIVE_EVERY rather than all of them. Refreshing the
-# excitation less often lets the membrane settle between kicks: with a radius 3
-# mallet, every update gives 92% and every eighth 96%.
-DRIVE_EVERY = 8
+# Drive one mesh update in DRIVE_EVERY. Every eighth measured slightly smoother
+# spatially than every one (96% against 92%), but at a 750 Hz update rate that
+# is a kick every 93.75 Hz -- a periodic step in the wavetable, squarely in the
+# audio band and audible as a buzz. Driving every update puts the repetition at
+# 750 Hz and makes the excitation continuous rather than impulsive; the mallet
+# already does the spatial smoothing that this was standing in for.
+DRIVE_EVERY = 1
 
 # How much of the scanned value fills the 8-bit display trace.
 WAVE_SHIFT = 6
@@ -118,10 +126,10 @@ OUT_SHIFT = 0
 
 # Drive amplitude, as a shift on the 12-bit level from in0. Random signs make
 # the membrane a random walk, so the equilibrium amplitude is roughly the
-# injection times 2**((LOSS_SHIFT-1)/2) -- about 23x here. 3 puts a full-scale
-# drive near a tenth of full scale in the mesh, which leaves room for a pluck
-# on top without saturating.
-DRIVE_SHIFT = 3
+# injection times 2**((LOSS_SHIFT-1)/2) -- about 23x here. Driving every update
+# rather than every eighth is sqrt(8) louder at equilibrium, so this comes down
+# by two shifts to match.
+DRIVE_SHIFT = 1
 
 
 def lam2_for_presets(presets):
@@ -180,7 +188,7 @@ class Orbita(wiring.Component):
         # Exposed for testbenches: the raw scanned value before output scaling.
         self.scan_dbg = Signal(signed(16))
         # Exposed so the top level can draw the scan circle over the mesh.
-        self.radius_dbg = Signal(4)
+        self.radius_dbg = Signal(6)
         super().__init__({
             "i": In(stream.Signature(data.ArrayLayout(ASQ, 4))),
             "o": Out(stream.Signature(data.ArrayLayout(ASQ, 4))),
@@ -201,7 +209,7 @@ class Orbita(wiring.Component):
 
         m.submodules.mesh = mesh = Mesh(
             n=n, presets=self.presets, video=self.video, snapshot=True,
-            mallet=MALLET)
+            mallet=MALLET_MAX)
         m.d.comb += [
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),
@@ -252,7 +260,19 @@ class Orbita(wiring.Component):
         # --- controls ---------------------------------------------------------
         cv_index = Signal(CV_BITS)
         pitch_q = Signal(signed(16))
-        radius = Signal(unsigned(4))
+        # in2 sweeps the scan circle between the inner and outer edges of the
+        # membrane as it currently is, rather than over absolute cell radii.
+        # Taken absolutely, most of the range fell off the drum -- on the wide
+        # ring only 6 of the 16 steps landed on it at all, and the rest were
+        # silence inside the hole or past the rim. Same fix as LACUNA's strike
+        # position: scale by the span, not add to the edge.
+        radius_cv = Signal(unsigned(4))
+        radius = Signal(unsigned(6))
+        rad_span = Signal(unsigned(6))
+        m.d.sync += [
+            rad_span.eq(mesh.geo_outer - mesh.geo_inner - 1),
+            radius.eq(mesh.geo_inner + 1 + ((radius_cv * rad_span) >> 4)),
+        ]
         drive = Signal(unsigned(12))
         pluck_pending = Signal()
         gate_prev = Signal()
@@ -303,7 +323,7 @@ class Orbita(wiring.Component):
         strike_amp = Signal(signed(WIDTH + 4))
         m.d.comb += mesh.strike_amp.eq(strike_amp)
 
-        m.d.comb += self.radius_dbg.eq(radius)
+        m.d.comb += self.radius_dbg.eq(radius)   # what the overlay draws
 
         v0 = Signal(signed(16))
         v1 = Signal(signed(16))
@@ -375,12 +395,20 @@ class Orbita(wiring.Component):
                     # Drive is the held level, not the edge: above the gate
                     # threshold it also keeps feeding the membrane.
                     m.d.sync += drive.eq(Mux(gate < 0, 0, gate[4:16]))
+                    # Hit it harder and it gets brighter: drive level shortens
+                    # the mallet, so in0 is velocity as well as amplitude. A
+                    # 1 V gate is a soft mallet, 6 V a hard stick.
+                    hard = Signal(range(MALLET_MAX + 2))
+                    m.d.comb += hard.eq(Mux(gate < 0, 0,
+                                        Mux(gate[13:16] > MALLET_MAX,
+                                            MALLET_MAX, gate[13:16])))
+                    m.d.sync += mesh.mallet_r.eq(MALLET_MAX - hard)
                     # Same clamps as LACUNA's position CV: a bare bit-slice of a
                     # signed value reads full scale for an idle jack one count
                     # below zero, and folds back around above 4 V.
                     m.d.sync += [
-                        radius.eq(Mux(pos < 0, 0,
-                                  Mux(pos > 16383, 15, pos[10:14]))),
+                        radius_cv.eq(Mux(pos < 0, 0,
+                                      Mux(pos > 16383, 15, pos[10:14]))),
                         mesh.fm.eq(_raw(self.i.payload[3])),
                     ]
                     m.d.sync += pitch_q.eq(pitch)
@@ -391,7 +419,8 @@ class Orbita(wiring.Component):
                 # arrives from the CODEC calibrator, and calibrator -> multiply
                 # -> clamp -> cv_index in a single cycle misses 60 MHz.
                 idx = Signal(signed(20))
-                m.d.comb += idx.eq((pitch_q * VOCT_Q16 + (1 << 15)) >> 16)
+                m.d.comb += idx.eq(((pitch_q * VOCT_Q16 + (1 << 15)) >> 16)
+                                   + PITCH_OFFSET)
                 with m.If(idx < 0):
                     m.d.sync += cv_index.eq(0)
                 with m.Elif(idx > (1 << CV_BITS) - 1):
