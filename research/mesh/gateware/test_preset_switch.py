@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """
 Does changing the preset CV require a rebuild? No -- the geometry is registers
 and comparators, not fabric. This measures how fast a preset change actually

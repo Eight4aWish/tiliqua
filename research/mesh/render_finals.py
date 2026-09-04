@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """Final demo renders: audio you can judge by ear, plus the membrane state."""
 
 import numpy as np

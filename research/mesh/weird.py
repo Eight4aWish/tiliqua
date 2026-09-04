@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """
 The mesh stops being a drum simulation the moment you stop respecting physics.
 Every variant below costs the same per-node arithmetic as the realistic one --

@@ -1,5 +1,7 @@
 # ORBITA -- the membrane as a wavetable.
 #
+# Copyright (c) 2026 D. Baghurst
+#
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
 # LACUNA listens to the mesh: the membrane vibrates at audio rate and a pickup

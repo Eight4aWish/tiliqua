@@ -1,4 +1,9 @@
 #!/bin/bash
+#
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 # Build this fork's own bitstreams: LACUNA and ORBITA, both video modes.
 #
 # Separate from upstream's build_bitstreams_{soc,no_soc}.sh so that rebasing

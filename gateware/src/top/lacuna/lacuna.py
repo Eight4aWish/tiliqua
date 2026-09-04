@@ -1,5 +1,7 @@
 # Lacuna -- a 2D membrane mesh whose hole is the instrument.
 #
+# Copyright (c) 2026 D. Baghurst
+#
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
 # The membrane itself lives in mesh.py, shared with ORBITA. This file is what

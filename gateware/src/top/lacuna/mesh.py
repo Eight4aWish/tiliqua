@@ -1,5 +1,7 @@
 # A 2D membrane mesh on a masked domain.
 #
+# Copyright (c) 2026 D. Baghurst
+#
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
 # Shared by LACUNA, which listens to the membrane through a pickup node, and by

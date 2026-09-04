@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 # Stand-in for `tiliqua.build.types.BitstreamHelp`, so `wavefield.py` can be
 # simulated by `preview.py` without the apfaudio/tiliqua tree present.
 # In-tree the real dataclass is imported instead.

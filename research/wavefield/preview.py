@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """
 Render frames of the `Wavefield` beamracing core to PNG, using the Amaranth
 simulator only -- no Tiliqua tree, no yosys, no nextpnr, no hardware.

@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """
 The annulus, explored. The mask is two radius comparisons, so on hardware the
 inner and outer radii are just two registers -- which makes every variant here

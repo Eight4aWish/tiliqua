@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """Capture the first few milliseconds after a strike -- the wave actually
 propagating and reflecting off the rim. This is what the screen would show at
 60 fps, straight out of the same BRAM the audio is read from."""

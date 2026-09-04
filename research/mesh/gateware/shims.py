@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """Stand-ins so mesh_core.py can be simulated without the Tiliqua tree."""
 
 from amaranth.hdl import signed

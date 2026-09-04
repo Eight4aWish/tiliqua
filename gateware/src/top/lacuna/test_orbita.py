@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """ORBITA: does the circular scan actually produce a waveform?
 
 The mesh takes ~1040 cycles per update, so the testbench has to pace samples at

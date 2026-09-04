@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """Measure the mesh's modal ratios against an ideal circular membrane.
 
 This is the number that decides whether the thing can sound like a drum. A

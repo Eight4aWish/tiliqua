@@ -1,3 +1,7 @@
+# Copyright (c) 2026 D. Baghurst
+#
+# SPDX-License-Identifier: CERN-OHL-S-2.0
+#
 """
 Reference model for a 2D FDTD membrane, in the exact arithmetic the gateware
 will use. Two jobs:

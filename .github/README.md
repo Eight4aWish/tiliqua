@@ -121,6 +121,39 @@ shared, so build *both* instruments after touching it.
 
 ## Licence
 
-Upstream is CERN-OHL-S-2.0 and these follow it. See
-[LICENSE](../LICENSE) and [CONTRIBUTING.md](../CONTRIBUTING.md), including
-upstream's policy on AI/LLM usage.
+Everything here, upstream's and mine, is
+**[CERN-OHL-S-2.0](../LICENSE)** — the CERN Open Hardware Licence, Strongly
+Reciprocal. In practice that means if you distribute a modified version, or a
+product built from it, you have to make the complete corresponding source
+available under the same licence.
+
+That applies to bitstreams too: a `.tar.gz` from the releases page is the
+"Object" form, so its source is this repository. Nothing here is usable under
+more permissive terms than upstream's, and nothing is intended to be.
+
+New files carry their own copyright and an `SPDX-License-Identifier`. The two
+top levels — `top/lacuna/top.py` and `top/orbita/top.py` — are reduced from
+upstream's `CoreTop` and `BeamRaceTop` and say so in their headers; the
+membrane, the instruments and their tests are original.
+
+## Provenance
+
+These were built in about two days, in heavy collaboration with an AI assistant
+(Claude). The design decisions, the musical judgements and the testing on
+hardware are mine; a lot of the gateware, the tests and this documentation were
+written with assistance, and the commit messages are machine-written with a
+`Co-Authored-By` trailer.
+
+That is worth stating plainly because upstream has
+[a policy on it](../CONTRIBUTING.md#use-of-llms--ai-in-contributions), and
+because this is a fork of someone else's project. **Nothing here has been
+proposed for upstream inclusion.** If any of it ever is, note that apfaudio does
+not accept AI-assisted contributions to shared libraries, platform code,
+pedagogical top-levels or documentation, and requires hand-written commit
+messages — so it would need reworking and re-authoring first, not just a pull
+request.
+
+For sharing a bitstream with other Tiliqua users, upstream's suggested route for
+out-of-tree work is a PR against
+[`tiliqua-webflash`](https://github.com/apfaudio/tiliqua-webflash) linking to
+source, where the in-tree contribution rules explicitly do not apply.

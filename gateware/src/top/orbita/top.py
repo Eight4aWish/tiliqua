@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
+# The clock, CODEC and DVI wiring here is derived from BeamRaceTop in src/top/beamrace/top.py,
+# Copyright (c) 2024 S. Holzapfel <me@sebholzapfel.com>, reduced to what
+# this design uses.
+#
 """
 ORBITA: the membrane scanned as a wavetable.
 

@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
+# The clock, CODEC and DVI wiring here is derived from CoreTop in src/top/dsp/top.py,
+# Copyright (c) 2024 S. Holzapfel <me@sebholzapfel.com>, reduced to what
+# this design uses.
+#
 """
 Lacuna: a 2D membrane mesh whose hole is the instrument.
 
