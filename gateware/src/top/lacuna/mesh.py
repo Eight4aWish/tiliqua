@@ -77,7 +77,8 @@ class Mesh(wiring.Component):
 
     """One membrane. Pulse `step` to advance it by one update."""
 
-    def __init__(self, n=32, presets=PRESETS, video=False, snapshot=False):
+    def __init__(self, n=32, presets=PRESETS, video=False, snapshot=False,
+                 mallet=0):
         assert n % 2 == 0
         self.n = n
         # `video`: also keep an 8-bit snapshot of the mesh for the display. It
@@ -91,6 +92,16 @@ class Mesh(wiring.Component):
         # snapshot above is a separate, narrower memory in the `dvi` domain
         # because a BRAM has two ports and the writer already holds one.
         self.snapshot = snapshot
+        # `mallet`: radius of the strike, in cells. A single-cell impulse
+        # excites every spatial mode equally hard, including the cell-to-cell
+        # checkerboard, and nothing damps that preferentially -- so the membrane
+        # stays as rough as whatever hit it. Measured on a ring: a one-cell
+        # strike leaves neighbouring cells agreeing in sign 61% of the time,
+        # which is spatial white noise; radius 3 takes it to 92%.
+        #
+        # It matters far more for ORBITA, which reads the membrane's shape
+        # directly, than for LACUNA, which hears one point over time.
+        self.mallet = mallet
         self.presets = presets
         for outer, _, _, _, _ in presets:
             assert outer <= n // 2 - 2, (
@@ -309,9 +320,33 @@ class Mesh(wiring.Component):
                 out = r
             return out
 
+        # The strike covers a disc of `mallet` cells around the strike node.
+        # dx/dy describe the node one cycle after j, so this is a stage later
+        # than the old `j == strike_node` test and its delay chain below is one
+        # shorter to compensate. At mallet 0 the disc is the single cell where
+        # the node offset equals the strike offset, which is the same node.
+        M = self.mallet
+        MSQ = Array([C(v * v, unsigned(10)) for v in range(M + 2)])
+        sdx = Signal(signed(9))
+        sdy = Signal(signed(9))
+        adx = Signal(range(M + 2))
+        ady = Signal(range(M + 2))
         strike_pending = Signal()
         strike_hit = Signal()
-        m.d.comb += strike_hit.eq(strike_pending & (j == strike_node))
+        # adx/ady are registered: node offset -> add -> abs -> clamp -> square
+        # lookup -> compare in one cycle left the sync domain at 60.6 MHz once
+        # ORBITA's scan shared the die. That puts the test a further stage on,
+        # so the delay chain below is one shorter again.
+        m.d.comb += [
+            sdx.eq(dx + strike_r),
+            sdy.eq(dy),
+        ]
+        m.d.sync += [
+            adx.eq(Mux(abs(sdx) > M, M + 1, abs(sdx))),
+            ady.eq(Mux(abs(sdy) > M, M + 1, abs(sdy))),
+        ]
+        m.d.comb += strike_hit.eq(strike_pending
+                                  & (MSQ[adx] + MSQ[ady] <= M * M))
         with m.If(self.strike):
             m.d.sync += strike_pending.eq(1)
 
@@ -332,7 +367,7 @@ class Mesh(wiring.Component):
 
         old_al = delay(old_rd, 4, "old")
         msk_al = delay(inside, 4, "msk")
-        strk_al = delay(strike_hit, 5, "strk")
+        strk_al = delay(strike_hit, 3, "strk")
         val_al = delay(scanning & (j < cells), 5, "val")
 
         base = Signal(signed(WIDTH + 4))

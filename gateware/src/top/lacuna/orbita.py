@@ -81,6 +81,25 @@ LAM_MAX = 1 << (LAM_FRAC - 1)
 # Per-update decay. At 750 Hz updates, 10 is a time constant near 1.4 s.
 LOSS_SHIFT = 10
 
+# Radius of the strike, in cells. ORBITA reads the membrane's shape directly,
+# so a one-cell impulse -- which excites the cell-to-cell checkerboard as hard
+# as anything else -- is heard as noise in the waveform, not just as brightness.
+# Measured on a ring: one cell leaves neighbours agreeing in sign 61% of the
+# time (white noise), radius 3 takes it to 92%.
+MALLET = 3
+
+# Drive one mesh update in DRIVE_EVERY rather than all of them. Refreshing the
+# excitation less often lets the membrane settle between kicks: with a radius 3
+# mallet, every update gives 92% and every eighth 96%.
+DRIVE_EVERY = 8
+
+# How much of the scanned value fills the 8-bit display trace.
+WAVE_SHIFT = 6
+
+# A mallet covers ~29 cells, so the same per-cell amplitude injects far more
+# energy than a single-cell strike. Scaled down to leave headroom.
+PLUCK_AMP = 0.15
+
 # How much of the 16-bit snapshot reaches the output.
 OUT_SHIFT = 0
 
@@ -155,6 +174,11 @@ class Orbita(wiring.Component):
             "button": In(1),
             "disp_addr": In(range(n * n)),
             "disp_data": Out(8),
+            # The circle unrolled: one bin per scan point, so the display can
+            # draw the waveform as it is actually read, phase-locked to the
+            # ring above it rather than free-running.
+            "wave_addr": In(N_POINTS),
+            "wave_data": Out(8),
         })
 
     def elaborate(self, platform):
@@ -163,7 +187,8 @@ class Orbita(wiring.Component):
         cx = cy = n // 2
 
         m.submodules.mesh = mesh = Mesh(
-            n=n, presets=self.presets, video=self.video, snapshot=True)
+            n=n, presets=self.presets, video=self.video, snapshot=True,
+            mallet=MALLET)
         m.d.comb += [
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),
@@ -275,6 +300,27 @@ class Orbita(wiring.Component):
         scanned_c = Signal(signed(16))
         m.d.comb += scanned_c.eq(v0 + (((v1 - v0) * frac) >> 10))
 
+        # --- waveform, for the display ----------------------------------------
+        m.submodules.wave_mem = wave_mem = Memory(
+            shape=unsigned(8), depth=1 << N_POINTS, init=[128] * (1 << N_POINTS))
+        wave_wr = wave_mem.write_port()
+        wave_rd = wave_mem.read_port(domain="dvi")
+        wv = Signal(signed(16))
+        wq = Signal(unsigned(8))
+        m.d.comb += wv.eq(scanned >> WAVE_SHIFT)
+        with m.If(wv > 127):
+            m.d.comb += wq.eq(255)
+        with m.Elif(wv < -127):
+            m.d.comb += wq.eq(1)
+        with m.Else():
+            m.d.comb += wq.eq((wv + 128)[:8])
+        m.d.comb += [
+            wave_wr.addr.eq(k_idx),
+            wave_wr.data.eq(wq),
+            wave_rd.addr.eq(self.wave_addr),
+            self.wave_data.eq(wave_rd.data),
+        ]
+
         # --- DC blocker -------------------------------------------------------
         # The membrane carries a DC component and the scan inherits it; a
         # wavetable with an offset wastes headroom and thumps when the radius
@@ -296,6 +342,7 @@ class Orbita(wiring.Component):
 
         # --- per-sample FSM ---------------------------------------------------
         div_count = Signal(range(max(2, self.update_div)))
+        drive_count = Signal(range(DRIVE_EVERY))
 
         with m.FSM():
             with m.State("WAIT"):
@@ -376,6 +423,7 @@ class Orbita(wiring.Component):
                     m.d.comb += _raw(self.o.payload[k]).eq(
                         out_payload if k == 0 else 0)
                 with m.If(self.o.ready):
+                    m.d.comb += wave_wr.en.eq(1)
                     m.d.sync += [
                         phase.eq(phase + nco_rd.data),
                         dc_x1.eq(scanned),
@@ -393,13 +441,15 @@ class Orbita(wiring.Component):
                             m.d.comb += mesh.strike.eq(1)
                             m.d.sync += [
                                 strike_amp.eq(
-                                    C(int(0.9 * (1 << FRAC)), signed(WIDTH + 4))),
+                                    C(int(PLUCK_AMP * (1 << FRAC)),
+                                      signed(WIDTH + 4))),
                                 pluck_pending.eq(0),
                             ]
-                        with m.Elif(drive != 0):
+                        with m.Elif((drive != 0) & (drive_count == 0)):
                             m.d.comb += mesh.strike.eq(1)
                             m.d.sync += strike_amp.eq(
                                 Mux(lfsr[0], drive, -drive) << DRIVE_SHIFT)
+                        m.d.sync += drive_count.eq(drive_count + 1)
                     with m.Else():
                         m.d.sync += div_count.eq(div_count + 1)
                     m.next = "WAIT"

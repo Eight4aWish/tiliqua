@@ -116,6 +116,47 @@ class OrbitaTop(Elaboratable):
         ]
         m.d.dvi += core.disp_addr.eq(Cat(cxc, cyc))
 
+        # --- waveform strip ---------------------------------------------------
+        # The circle unrolled, drawn under the mesh: 64 bins across the same
+        # 512 px, so a feature at an angle on the ring sits above the sample it
+        # produced. Phase-locked by construction -- the bin index is the scan
+        # position, not a free-running capture -- so a steady tone stands still.
+        strip_y0 = y0 + side + 8
+        strip_h = self.clock_settings.modeline.v_active - strip_y0 - 8
+        assert strip_h >= 32, "no room under the mesh for the waveform strip"
+        strip_cy = strip_y0 + strip_h // 2
+        m.d.dvi += core.wave_addr.eq((x + (2 - x0)) >> (CELL_SHIFT - 1))
+
+        # Kept narrow deliberately: the row offset within the strip needs 8
+        # bits, not the 12 of a raw pixel coordinate, and carrying the wide
+        # version through two pipeline stages crowded the routing enough to
+        # drop the 371 MHz serialiser to 299.
+        YW = max(8, (strip_h + 1).bit_length() + 1)
+        ys = Signal(signed(YW))
+        ys_1 = Signal(signed(YW))
+        ys_q = Signal(signed(YW))
+        in_strip = Signal()
+        in_strip_1 = Signal()
+        in_strip_q = Signal()
+        m.d.comb += [
+            ys.eq(y - strip_y0),
+            in_strip.eq((xn >= x0) & (xn < x0 + side) &
+                        (y >= strip_y0) & (y < strip_y0 + strip_h)),
+        ]
+        m.d.dvi += [
+            ys_1.eq(ys), ys_q.eq(ys_1),
+            in_strip_1.eq(in_strip), in_strip_q.eq(in_strip_1),
+        ]
+
+        trace_ys = Signal(signed(YW))
+        on_trace = Signal()
+        m.d.comb += [
+            trace_ys.eq((strip_h // 2)
+                        - ((core.wave_data.as_signed() - 128) >> 2)),
+            on_trace.eq(in_strip_q
+                        & (ys_q - trace_ys < 2) & (trace_ys - ys_q < 2)),
+        ]
+
         on_mesh = Signal()
         on_mesh_1 = Signal()
         on_mesh_q = Signal()
@@ -147,7 +188,10 @@ class OrbitaTop(Elaboratable):
         SQ = Array([C(v * v, unsigned(9)) for v in range(n // 2 + 1)])
         adx = Signal(range(n // 2 + 1))
         ady = Signal(range(n // 2 + 1))
-        rad_q = Signal(4)
+        # Signed and one bit wider: rad_q.as_signed() on a 4-bit value
+        # reads 8..15 as negative, so the compare below was never true
+        # for any radius past 7 and the overlay simply did not draw.
+        rad_q = Signal(signed(6))
         m.d.comb += [
             ddx.eq(cxc - (n // 2)),
             ddy.eq(cyc - (n // 2)),
@@ -161,15 +205,15 @@ class OrbitaTop(Elaboratable):
         ]
         # |d2 - r2| < r is about a one-cell-wide ring at any radius.
         m.d.comb += on_circle.eq((rad_q != 0)
-                                 & (dd2 - rr2 < rad_q.as_signed())
-                                 & (rr2 - dd2 < rad_q.as_signed()))
+                                 & (dd2 - rr2 < rad_q)
+                                 & (rr2 - dd2 < rad_q))
         m.d.dvi += on_circle_q.eq(on_circle)
 
         # Diverging palette, as LACUNA: 0 is outside the membrane, 128 a node at
         # rest, and the two signs of displacement go to blue and red. The scan
         # circle is added as a green wash so it reads over either sign without
         # hiding the mesh underneath it.
-        CIRCLE_G = 90
+        CIRCLE_G = 34
         v = core.disp_data
         mag = Signal(unsigned(8))
         pos = Signal()
@@ -182,7 +226,11 @@ class OrbitaTop(Elaboratable):
             mag.eq(Mux(pos, (v - 128) << 1, (128 - v) << 1)),
             gm.eq((mag >> 2) + Mux(on_circle_q & on_mesh_q, CIRCLE_G, 0)),
         ]
-        with m.If(~on_mesh_q):
+        with m.If(on_trace):
+            # The waveform, in the same grey the mesh is drawn against so it
+            # reads as an instrument panel rather than a third colour.
+            m.d.comb += [r.eq(200), g.eq(200), b.eq(200)]
+        with m.Elif(~on_mesh_q):
             m.d.comb += [r.eq(0), g.eq(0), b.eq(0)]
         with m.Else():
             m.d.comb += [
