@@ -56,13 +56,18 @@ except ImportError:                       # standalone simulation
 
 
 FS = 48000
-# Scan rate. Eight octaves at an exact 256 steps each, and offset so that an
-# idle or lightly-driven in1 sits on a musical note rather than on the lowest
-# one available: 0 V is 220 Hz, -3 V reaches 27.5 Hz and +5 V reaches 7040 Hz.
-# The old 55 Hz at 0 V put everything in the bass whatever you patched.
+# Scan rate. Eight octaves at an exact 256 steps each.
+#
+# 0 V is 55 Hz, which is where it started and where the bass this instrument is
+# good at actually lives. The offset briefly moved it to 220 Hz so an unpatched
+# input landed somewhere musical, which put the low end out of reach of an
+# ordinary 0-5 V sequencer -- a bad trade for an instrument whose best register
+# is the bottom. The octaves were the useful half of that change: the ceiling
+# was 880 Hz and is now 7040 Hz, so the high end is reachable without giving up
+# the low one. Below 55 Hz needs negative CV, down to 27.5 Hz at -1 V.
 F_LO, OCTAVES = 27.5, 8
 CV_BITS = 11                  # 2048 steps, 256 to the octave
-PITCH_OFFSET = 3 * 256        # 0 V lands three octaves up, on 220 Hz
+PITCH_OFFSET = 1 * 256        # 0 V lands on 55 Hz, where the bass lives
 VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 PHASE_BITS = 32
 
