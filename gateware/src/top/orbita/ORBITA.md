@@ -123,16 +123,26 @@ fails there.
 **Neither test checks timing**, and the shared mesh has broken LACUNA's timing
 twice from ORBITA-side changes. Build both after touching `mesh.py`.
 
-## Not yet
+## Limitations
 
-- **The scan snaps to whole cells.** This is the main remaining defect: on a
-  perfectly smooth field, nearest-cell addressing measures 0.14 roughness
-  against 0.039 for bilinear interpolation. It is also why the radius is
-  sixteen steps rather than continuous. Bilinear fixes both.
-- No tension control. λ² is a per-preset constant chosen for `F_EVOLVE`; all
-  four jacks are spoken for.
-- The strike position exists in the mesh and ORBITA does not drive it, so it
-  sits at the inner edge. Where energy enters changes which modes are excited —
-  a second timbre axis, wanting a fifth control.
-- An offset scan circle would cross a concentric hole and recover the
-  duty-cycle behaviour on every preset, not just the asymmetric ones.
+- **λ² is a per-preset constant**, so there is no tension control. All four
+  jacks are spoken for and this is the parameter that lost.
+- **The strike always enters at the inner edge.** The mesh supports a strike
+  position and ORBITA does not drive it, for the same reason.
+- **Sixty-four points per revolution.** Above roughly 2 kHz the table's own
+  harmonics begin to fold. Audible as character rather than as a fault, but it
+  is there.
+
+## Where it goes next
+
+- **Stereo.** Two scan circles at different radii are two genuinely different
+  wavetables — unlike two points on the same circle, which is only a phase
+  offset and sums to mono. Costs four more reads, three multipliers and about
+  seven states.
+- **An offset scan circle** would cross a *concentric* hole, recovering the
+  flat-segment behaviour on every preset rather than only on the slit and the
+  square. Hole radius would become duty cycle.
+- **Tension on a control**, if a fifth input can be found — a second encoder
+  page, or trading geometry for it.
+- **A larger mesh.** 64×64 quadruples the state and the scan, both of which
+  fit, and would put far more distinct modes inside the audio band.

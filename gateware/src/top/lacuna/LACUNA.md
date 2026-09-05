@@ -143,13 +143,24 @@ domain came out 65.7–68.5 MHz and the 371 MHz serialiser 324–406, two failin
 outright. One unpinned build shipped at 63.25 MHz against 60 and coincided with
 a full device crash.
 
-## Not yet
+## Limitations
 
-- No feedback path. Per-sample injection of the module's own output would make
+- **Single-node strike.** `mesh.py` supports a mallet radius and LACUNA leaves
+  it at zero: a one-cell strike is brighter and slightly harsher, which suits a
+  struck instrument heard through a pickup. It is a choice, not an oversight —
+  ORBITA needs the opposite because it reads the shape rather than a point.
+- **Geometry FM uses a hard mask**, so a fast sweep of in3 is broadband noise
+  at the boundary. An energy-conserving moving boundary is an open problem in
+  the literature, not a coding task.
+- **All modes decay together.** Real membranes damp high modes faster. A
+  diffusion term was tried and measurably did nothing.
+
+## Where it goes next
+
+- **Stereo.** The pickup is a single comparator, so a second one is nearly
+  free — no multipliers, no extra cycles. It has to be perpendicular and at a
+  different radius: a mirrored point reads identically on every symmetric
+  preset and would give mono.
+- **A feedback path.** Injecting the module's own output per sample would make
   the surface part of a patch rather than an endpoint.
-- Single-node strike. `mesh.py` supports a mallet radius and LACUNA leaves it at
-  zero; a wider strike is rounder and much less bright, which is the trade.
-- No frequency-dependent damping, so all modes decay together. A diffusion term
-  was tried and measurably did nothing.
-- Geometry FM uses a hard mask; the discontinuity is broadband noise. An
-  energy-conserving moving boundary is an open problem, not a coding task.
+- **A larger mesh**, for more distinct modes in the audio band.
