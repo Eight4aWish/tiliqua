@@ -183,7 +183,7 @@ class Orbita(wiring.Component):
     bitstream_help = BitstreamHelp(
         brief="Orbita: the membrane scanned as a wavetable",
         io_left=['drive', 'pitch', 'radius', 'geometry',
-                 'scan', '', '', ''],
+                 'scan L', 'scan R', '', ''],
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
@@ -197,6 +197,7 @@ class Orbita(wiring.Component):
         self.scan_dbg = Signal(signed(16))
         # Exposed so the top level can draw the scan circle over the mesh.
         self.radius_dbg = Signal(6)
+        self.radius2_dbg = Signal(6)
         super().__init__({
             "i": In(stream.Signature(data.ArrayLayout(ASQ, 4))),
             "o": Out(stream.Signature(data.ArrayLayout(ASQ, 4))),
@@ -275,8 +276,11 @@ class Orbita(wiring.Component):
         # silence inside the hole or past the rim. Same fix as LACUNA's strike
         # position: scale by the span, not add to the edge.
         radius_cv = Signal(unsigned(8))
-        radius = Signal(unsigned(4 + RAD_FRAC))     # cells, Q4
+        radius = Signal(unsigned(5 + RAD_FRAC))     # cells, Q4
+        radius_r = Signal(unsigned(5 + RAD_FRAC))
         rad_span = Signal(unsigned(6))
+        rad_r_raw = Signal(unsigned(5 + RAD_FRAC))
+        rad_max = Signal(unsigned(5 + RAD_FRAC))
         m.d.sync += [
             # Cells between the two edges the scan may sit on.
             rad_span.eq(mesh.geo_outer - mesh.geo_inner - 2),
@@ -285,6 +289,15 @@ class Orbita(wiring.Component):
             # rather than one step short.
             radius.eq(((mesh.geo_inner + 1) << RAD_FRAC)
                       + (((radius_cv + 1) * rad_span) >> (8 - RAD_FRAC))),
+            # The right channel scans a circle a quarter of the annulus further
+            # out, clamped at the rim. Two circles at different radii are two
+            # genuinely different wavetables; two points on the *same* circle
+            # would only be a phase offset, which gives width but combs in mono.
+            # The fixed offset means there is always spread -- a scheme that
+            # crossed the two would have a mono null in the middle of in2.
+            rad_r_raw.eq(radius + (rad_span << 2)),
+            rad_max.eq((mesh.geo_outer - 1) << RAD_FRAC),
+            radius_r.eq(Mux(rad_r_raw > rad_max, rad_max, rad_r_raw)),
         ]
         drive = Signal(unsigned(12))
         pluck_pending = Signal()
@@ -327,6 +340,21 @@ class Orbita(wiring.Component):
         v01 = Signal(signed(16)); v11 = Signal(signed(16))
         va = Signal(signed(17)); vb = Signal(signed(17))
 
+        # Stereo without a second datapath. The FSM walks the position-and-blend
+        # sequence twice, once per channel, and `ch` muxes which radius goes
+        # into the shared multipliers -- so two channels cost states, of which
+        # there are 1250 per sample and we use about thirty, rather than
+        # multipliers, of which nine remain. Duplicating the datapath instead
+        # would have needed seven more and almost certainly not placed.
+        #
+        # The angle is computed once and reused: only the radius differs between
+        # the channels, so P0..P3 run once and P4 onward twice.
+        ch = Signal()
+        rad_sel = Signal(unsigned(5 + RAD_FRAC))
+        m.d.comb += rad_sel.eq(Mux(ch, radius_r, radius))
+        mix = Signal(signed(17))
+        m.d.comb += mix.eq(va + (((vb - va) * ty) >> RAD_FRAC))
+
         # Held, not pulsed: the mesh does not reach the strike node until
         # hundreds of cycles into its scan, so an amplitude driven only on the
         # cycle that pulses `step` has long since gone back to zero by the time
@@ -334,10 +362,12 @@ class Orbita(wiring.Component):
         strike_amp = Signal(signed(WIDTH + 4))
         m.d.comb += mesh.strike_amp.eq(strike_amp)
 
-        # The overlay draws whole cells, so hand it the rounded radius.
-        m.d.comb += self.radius_dbg.eq(radius >> RAD_FRAC)
+        # The overlay draws whole cells, so hand it the rounded radii.
+        m.d.comb += [self.radius_dbg.eq(radius >> RAD_FRAC),
+                     self.radius2_dbg.eq(radius_r >> RAD_FRAC)]
 
         scanned = Signal(signed(16))
+        scanned_r = Signal(signed(16))
 
         # --- waveform, for the display ----------------------------------------
         m.submodules.wave_mem = wave_mem = Memory(
@@ -364,20 +394,27 @@ class Orbita(wiring.Component):
         # The membrane carries a DC component and the scan inherits it; a
         # wavetable with an offset wastes headroom and thumps when the radius
         # moves. One pole at about 5 Hz.
-        dc_x1 = Signal(signed(16))
-        dc_y1 = Signal(signed(24))
-        dc_y = Signal(signed(24))
-        m.d.comb += dc_y.eq(scanned - dc_x1 + dc_y1 - (dc_y1 >> 10))
+        # One per channel: they are independent signals with independent
+        # offsets, and sharing a blocker between them would put each channel's
+        # DC into the other.
+        def blocked(src, name):
+            x1 = Signal(signed(16), name=f"dc_x1_{name}")
+            y1 = Signal(signed(24), name=f"dc_y1_{name}")
+            y  = Signal(signed(24), name=f"dc_y_{name}")
+            sc = Signal(signed(24), name=f"dc_s_{name}")
+            out = Signal(signed(16), name=f"out_{name}")
+            m.d.comb += [y.eq(src - x1 + y1 - (y1 >> 10)),
+                         sc.eq(y >> OUT_SHIFT)]
+            with m.If(sc > 32767):
+                m.d.comb += out.eq(32767)
+            with m.Elif(sc < -32768):
+                m.d.comb += out.eq(-32768)
+            with m.Else():
+                m.d.comb += out.eq(sc)
+            return out, x1, y1, y
 
-        out_payload = Signal(signed(16))
-        dc_s = Signal(signed(24))
-        m.d.comb += dc_s.eq(dc_y >> OUT_SHIFT)
-        with m.If(dc_s > 32767):
-            m.d.comb += out_payload.eq(32767)
-        with m.Elif(dc_s < -32768):
-            m.d.comb += out_payload.eq(-32768)
-        with m.Else():
-            m.d.comb += out_payload.eq(dc_s)
+        out_payload, dc_x1, dc_y1, dc_y = blocked(scanned, "l")
+        out_payload2, dc_x1r, dc_y1r, dc_yr = blocked(scanned_r, "r")
 
         # --- per-sample FSM ---------------------------------------------------
         div_count = Signal(range(max(2, self.update_div)))
@@ -463,8 +500,8 @@ class Orbita(wiring.Component):
                 # Position in Q4 cells. cos is Q6 and radius Q4, so the product
                 # is Q10 and needs six shifts to land back in Q4.
                 m.d.sync += [
-                    fx.eq((cx << RAD_FRAC) + ((ci * radius) >> CIRC_SCALE)),
-                    fy.eq((cy << RAD_FRAC) + ((si * radius) >> CIRC_SCALE)),
+                    fx.eq((cx << RAD_FRAC) + ((ci * rad_sel) >> CIRC_SCALE)),
+                    fy.eq((cy << RAD_FRAC) + ((si * rad_sel) >> CIRC_SCALE)),
                 ]
                 m.next = "P5"
 
@@ -514,21 +551,27 @@ class Orbita(wiring.Component):
                 m.next = "B1"
 
             with m.State("B1"):
-                # ...then between the rows.
-                m.d.sync += scanned.eq(va + (((vb - va) * ty) >> RAD_FRAC))
-                m.next = "EMIT"
+                # ...then between the rows. `mix` is a single signal rather than
+                # the expression written twice, so the blend is one multiplier
+                # shared by both channels rather than two.
+                with m.If(ch == 0):
+                    m.d.sync += [scanned.eq(mix), ch.eq(1)]
+                    m.next = "P4"          # same angle, the other radius
+                with m.Else():
+                    m.d.sync += [scanned_r.eq(mix), ch.eq(0)]
+                    m.next = "EMIT"
 
             with m.State("EMIT"):
                 m.d.comb += self.o.valid.eq(1)
                 for k in range(4):
                     m.d.comb += _raw(self.o.payload[k]).eq(
-                        out_payload if k == 0 else 0)
+                        {0: out_payload, 1: out_payload2}.get(k, 0))
                 with m.If(self.o.ready):
                     m.d.comb += wave_wr.en.eq(1)
                     m.d.sync += [
                         phase.eq(phase + nco_rd.data),
-                        dc_x1.eq(scanned),
-                        dc_y1.eq(dc_y),
+                        dc_x1.eq(scanned), dc_y1.eq(dc_y),
+                        dc_x1r.eq(scanned_r), dc_y1r.eq(dc_yr),
                         self.scan_dbg.eq(scanned),
                     ]
                     # Advance the membrane every UPDATE_DIV samples. The mesh

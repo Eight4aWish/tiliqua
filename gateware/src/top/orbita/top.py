@@ -184,8 +184,11 @@ class OrbitaTop(Elaboratable):
         # torn value would show as one frame of a slightly wrong circle, so a
         # plain synchroniser is enough.
         radius_dvi = Signal(6)
+        radius2_dvi = Signal(6)
         m.submodules.rad_cdc = FFSynchronizer(
                 core.radius_dbg, radius_dvi, o_domain="dvi")
+        m.submodules.rad2_cdc = FFSynchronizer(
+                core.radius2_dbg, radius2_dvi, o_domain="dvi")
         ddx = Signal(signed(8))
         ddy = Signal(signed(8))
         dd2 = Signal(signed(16))
@@ -206,6 +209,10 @@ class OrbitaTop(Elaboratable):
         # reads 8..15 as negative, so the compare below was never true
         # for any radius past 7 and the overlay simply did not draw.
         rad_q = Signal(signed(8))
+        rad2_q = Signal(signed(8))
+        rr2b = Signal(signed(16))
+        on_circle2 = Signal()
+        on_circle2_q = Signal()
         m.d.comb += [
             ddx.eq(cxc - (n // 2)),
             ddy.eq(cyc - (n // 2)),
@@ -215,13 +222,18 @@ class OrbitaTop(Elaboratable):
         m.d.dvi += [
             dd2.eq(SQ[adx] + SQ[ady]),
             rr2.eq(SQ[radius_dvi]),
+            rr2b.eq(SQ[radius2_dvi]),
             rad_q.eq(radius_dvi),
+            rad2_q.eq(radius2_dvi),
         ]
         # |d2 - r2| < r is about a one-cell-wide ring at any radius.
         m.d.comb += on_circle.eq((rad_q != 0)
                                  & (dd2 - rr2 < rad_q)
                                  & (rr2 - dd2 < rad_q))
-        m.d.dvi += on_circle_q.eq(on_circle)
+        m.d.comb += on_circle2.eq((rad2_q != 0)
+                                  & (dd2 - rr2b < rad2_q)
+                                  & (rr2b - dd2 < rad2_q))
+        m.d.dvi += [on_circle_q.eq(on_circle), on_circle2_q.eq(on_circle2)]
 
         # Diverging palette, as LACUNA: 0 is outside the membrane, 128 a node at
         # rest, and the two signs of displacement go to blue and red. The scan
@@ -238,7 +250,9 @@ class OrbitaTop(Elaboratable):
         m.d.comb += [
             pos.eq(v >= 128),
             mag.eq(Mux(pos, (v - 128) << 1, (128 - v) << 1)),
-            gm.eq((mag >> 2) + Mux(on_circle_q & on_mesh_q, CIRCLE_G, 0)),
+            gm.eq((mag >> 2)
+                  + Mux(on_circle_q & on_mesh_q, CIRCLE_G, 0)
+                  + Mux(on_circle2_q & on_mesh_q, CIRCLE_G, 0)),
         ]
         with m.If(on_trace):
             # The waveform, in the same grey the mesh is drawn against so it
@@ -249,7 +263,10 @@ class OrbitaTop(Elaboratable):
         with m.Else():
             m.d.comb += [
                 r.eq(Mux(pos, mag, 0)),
-                b.eq(Mux(pos, 0, mag)),
+                # The right channel's circle also lifts blue, so the two
+                # paths are distinguishable: left reads green, right cyan.
+                b.eq(Mux(pos, 0, mag)
+                     + Mux(on_circle2_q & on_mesh_q, CIRCLE_G, 0)),
                 g.eq(Mux(gm > 255, 255, gm)),
             ]
 
