@@ -82,7 +82,7 @@ pdm install
 # or one at a time
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
     pdm lacuna build --modeline 1280x720p60
-AMARANTH_nextpnr_opts="--timing-allow-fail --seed 3" \
+AMARANTH_nextpnr_opts="--timing-allow-fail --seed 6" \
     pdm orbita build --modeline 1280x720p60
 ```
 

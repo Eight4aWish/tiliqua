@@ -103,9 +103,9 @@ does. Costs about 620 LUTs, one BRAM and the second PLL.
 Blue and red are the two signs of displacement, so what you see is the mode
 pattern rather than a brightness envelope — which matters, because mode beating
 reads as the pattern *precessing*, and a waveform display cannot show that at
-all. The strike is marked in green and the pickup in amber: both move with in2
-and with the geometry underneath them, and they are otherwise invisible
-controls.
+all. The strike is marked in green and the two pickups in amber — the left
+brighter, the right paler. All three move with in2 and with the geometry
+underneath them, and they are otherwise invisible controls.
 
 ## Six things that bit
 

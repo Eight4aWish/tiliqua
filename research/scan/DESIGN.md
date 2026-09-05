@@ -1,7 +1,13 @@
 # ORBITA — the mesh as a wavetable, not as a drum
 
 Design note, started 2026-09-03, path topology and name settled 2026-09-04.
-Nothing here is built yet.
+**Built 2026-09-04 and since revised — this is kept as the note it was, not
+as current documentation.** For what ORBITA actually does, see
+[ORBITA.md](../../gateware/src/top/orbita/ORBITA.md).
+
+Two things here were settled differently in the building. The scan samples
+*between* cells rather than snapping to them, which the note lists only as an
+open question; and it is stereo, from two circles at different radii.
 
 **ORBITA** — Latin for a wheel-track or circuit, from *orbis*, a circle; the
 ancestor of "orbit", and it names the path traced rather than the shape. It also

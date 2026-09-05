@@ -13,10 +13,12 @@
 # Verplank/Mathews/Shaw scanned synthesis. See research/scan/DESIGN.md.
 #
 #     in0  drive      gate edge plucks; a held level keeps it alive as a drone
-#     in1  pitch      1 V/oct, 55-880 Hz -- the scan rate, not the mesh
-#     in2  radius     scan circle, hub to past the rim
+#     in1  pitch      1 V/oct, 0 V is 55 Hz, eight octaves -- the scan rate,
+#                    not the membrane
+#     in2  radius     scan circle, inner edge to outer edge
 #     in3  geometry   audio-rate modulation of the hole radius
-#     out0 scan
+#     out0 scan L     the circle in2 selects
+#     out1 scan R     a quarter of the annulus further out
 #     encoder short press cycles the preset (a 3 s hold still reboots)
 #
 # WHY A CIRCLE. A line across the membrane has two ends, and the wrap from the
