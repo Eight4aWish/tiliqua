@@ -13,7 +13,7 @@ pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 |---|---|
 | in0 | drive — a gate edge plucks; a held level keeps it alive as a drone |
 | in1 | pitch — 1 V/oct, 0 V is 55 Hz, eight octaves to 7040 Hz |
-| in2 | radius — the scan circle, inner edge to outer edge, 256 steps |
+| in2 | radius — the left scan circle, inner edge to outer edge, 256 steps; the right follows a quarter of the annulus out |
 | in3 | geometry — audio-rate modulation of the hole radius |
 | out0 | scan L — the circle in2 selects |
 | out1 | scan R — a quarter of the annulus further out |

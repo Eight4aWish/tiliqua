@@ -6,7 +6,8 @@
 #
 # The membrane itself lives in mesh.py, shared with ORBITA. This file is what
 # makes it an instrument you strike and listen to: the CV mapping, the pitch
-# table, the encoder, and a pickup node for the output.
+# table, the encoder, and two pickup nodes a quarter turn apart for the
+# stereo output.
 #
 #     in0  strike     rising edge above ~1 V
 #     in1  tension    1 V/oct, 55-880 Hz
