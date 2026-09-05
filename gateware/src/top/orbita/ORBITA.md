@@ -165,8 +165,12 @@ The membrane itself is covered by `test_lacuna.py`, which stays bit-exact —
 `mesh.py` is shared, so a change for ORBITA that breaks LACUNA's arithmetic
 fails there.
 
-**Neither test checks timing**, and the shared mesh has broken LACUNA's timing
-twice from ORBITA-side changes. Build both after touching `mesh.py`.
+**Neither test checks timing.** The shared mesh means work done for one
+instrument can break the other's timing while every test still passes — the
+mallet added here for ORBITA left LACUNA at 57.65 MHz against a 60 MHz
+constraint, and it went unnoticed until LACUNA was next built two days later.
+Build both after touching `mesh.py`, and re-check the seeds after anything that
+changes the design's size.
 
 ## Limitations
 

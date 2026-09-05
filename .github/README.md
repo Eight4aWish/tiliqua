@@ -117,14 +117,19 @@ python test_orbita.py     # the scan: circle, pluck, radius sweep, drone
 Both run standalone with no FPGA toolchain — `shims.py` stands in for the tree's
 fixed-point types.
 
-**Neither test checks timing**, and three separate timing regressions have been
-caught only by building while the tests stayed bit-exact throughout. The mesh is
-shared, so build *both* instruments after touching it.
+**Neither test checks timing**, and that is the gap that has bitten most. Eight
+separate timing regressions have been caught only by building, with the tests
+staying bit-exact throughout every one of them — and several more where nothing
+changed but the placer seed. The mesh is shared, so build *both* instruments
+after touching it, and check the seed still closes after anything that alters
+the design's size.
 
 ## Research
 
 [`research/`](../research) holds the exploration behind them, kept out of
-`gateware/` so rebases onto upstream never touch it:
+`gateware/` so rebases onto upstream never touch it. It is a **historical
+record** — the build and install instructions in those files describe how things
+were tried before they became bitstreams, and are superseded:
 
 - [`research/mesh/`](../research/mesh) — the fixed-point reference model, the
   annulus family, mode analysis, and the audio that came out of it

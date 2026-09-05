@@ -1,5 +1,13 @@
 # 2D membrane mesh — reference model
 
+> **Historical.** This records the exploration, not the instruments that came
+> out of it. The membrane now lives in
+> [`gateware/src/top/lacuna/mesh.py`](../../gateware/src/top/lacuna/mesh.py) and
+> is played by [LACUNA](../../gateware/src/top/lacuna/LACUNA.md) and
+> [ORBITA](../../gateware/src/top/orbita/ORBITA.md). Build and install
+> instructions below are superseded.
+
+
 Numpy model of the 2D FDTD membrane, in the exact fixed-point arithmetic the
 Amaranth core will use. Two jobs: decide whether this is musically worth
 building before any gateware exists, and fix the widths, shifts and rounding so
@@ -172,18 +180,21 @@ moving boundary is the open research problem here, not a coding task.
 the same modulation applied to a resonator driven by external audio rather than
 struck.
 
-**The other two USPs, not yet built:** the surface state is already in the memory
-the audio is read from, so drawing it at 60 fps is nearly free -- no CPU can show
-you the instrument. And gateware is per-sample, so the module's own output can
-be injected back into the mesh with single-sample latency, making the surface
-part of the patch's feedback loop rather than an endpoint.
+**The other two USPs.** The first is built: the surface state is already in the
+memory the audio is read from, so drawing it costs about 620 LUTs and one BRAM,
+with no framebuffer, no PSRAM and no CPU. Both instruments do it. The second --
+injecting the module's own output back into the mesh with single-sample latency,
+making the surface part of a patch's feedback loop rather than an endpoint -- is
+still not built.
 
 ## Status and what is still open
 
-- Frequency-dependent damping is **not implemented**. Without it every mode
-  decays at the same rate, which is the largest remaining gap between this and a
-  real membrane — real ones lose highs first. Two options: pay for the second
-  neighbour sum, or approximate with a one-pole on the output tap.
+- Frequency-dependent damping is **not implemented**, and an attempt at it was
+  measured and abandoned: adding a fraction of the Laplacian back each update
+  moved spatial coherence from 62% to 64% and made ORBITA's output waveform
+  rougher, not smoother. The real cause of the roughness it was meant to fix
+  turned out to be the excitation -- a single-cell strike is a spatial
+  white-noise generator -- so `mesh.py` gained a mallet radius instead.
 - No shell, no air cavity, no nonlinear tension modulation. Those are what
   separate "struck membrane" from "recognisable drum"; see the note in the
   session discussion.

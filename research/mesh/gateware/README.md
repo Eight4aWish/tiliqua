@@ -1,5 +1,13 @@
 # Mesh core — gateware
 
+> **Historical.** This records the exploration, not the instruments that came
+> out of it. The membrane now lives in
+> [`gateware/src/top/lacuna/mesh.py`](../../../gateware/src/top/lacuna/mesh.py) and
+> is played by [LACUNA](../../../gateware/src/top/lacuna/LACUNA.md) and
+> [ORBITA](../../../gateware/src/top/orbita/ORBITA.md). Build and install
+> instructions below are superseded.
+
+
 A 2D FDTD membrane mesh as a drop-in core for Tiliqua's `dsp` top-level. Audio
 only; video comes later on the `vectorscope_no_soc` skeleton.
 
@@ -35,7 +43,11 @@ Two multipliers are used off the audio path, for `d2` and the squared radii.
 Build at 48 kHz. At 192 kHz the budget falls to 312 cycles and this does not
 fit; that needs the four-datapath version.
 
-## Install
+## Install (superseded)
+
+This is how the prototype was tried out as a `dsp` demo core. It is not how the
+membrane is built now: it became `top/lacuna/mesh.py`, shared by two top-level
+bitstreams of its own, and `pdm lacuna build` / `pdm orbita build`.
 
 ```bash
 cp mesh_core.py /path/to/tiliqua/gateware/src/top/dsp/
