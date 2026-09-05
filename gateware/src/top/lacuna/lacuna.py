@@ -12,7 +12,8 @@
 #     in1  tension    1 V/oct, 55-880 Hz
 #     in2  position   strike position, hub to rim
 #     in3  geometry   audio-rate modulation of the hole radius
-#     out0 mesh
+#     out0 mesh L     pickup on the +y axis
+#     out1 mesh R     a quarter turn round at the same radius
 #     encoder short press cycles the preset (a 3 s hold still reboots)
 #
 # TUNING is exact rather than calibrated. For a mode whose discrete-Laplacian

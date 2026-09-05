@@ -4,10 +4,13 @@
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
-# Shared by LACUNA, which listens to the membrane through a pickup node, and by
-# ORBITA, which evolves it slowly and scans a circular path through it as a
-# wavetable. Everything about how the membrane behaves lives here; everything
+# Shared by LACUNA, which listens to the membrane through two pickup nodes, and
+# by ORBITA, which evolves it slowly and scans circular paths through it as
+# wavetables. Everything about how the membrane behaves lives here; everything
 # about what the CVs mean and what comes out lives in the top level.
+#
+# Because it is shared, a change made for one instrument can break the other's
+# timing while every test still passes. Build both after touching this file.
 #
 # THE UPDATE. The membrane is
 #
