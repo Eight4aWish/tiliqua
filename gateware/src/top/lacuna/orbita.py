@@ -75,6 +75,7 @@ PHASE_BITS = 32
 
 N_POINTS = 6                  # 64 points on the circle
 CIRC_SCALE = 6                # unit vectors stored as cos*64
+RAD_FRAC = 4                  # sub-cell precision of the scan position
 
 # One mesh update every UPDATE_DIV audio samples. This, not lam2, is what makes
 # the membrane sub-audio: at 48 kHz / 64 the mesh advances at 750 Hz, so a mode
@@ -273,12 +274,17 @@ class Orbita(wiring.Component):
         # ring only 6 of the 16 steps landed on it at all, and the rest were
         # silence inside the hole or past the rim. Same fix as LACUNA's strike
         # position: scale by the span, not add to the edge.
-        radius_cv = Signal(unsigned(4))
-        radius = Signal(unsigned(6))
+        radius_cv = Signal(unsigned(8))
+        radius = Signal(unsigned(4 + RAD_FRAC))     # cells, Q4
         rad_span = Signal(unsigned(6))
         m.d.sync += [
-            rad_span.eq(mesh.geo_outer - mesh.geo_inner - 1),
-            radius.eq(mesh.geo_inner + 1 + ((radius_cv * rad_span) >> 4)),
+            # Cells between the two edges the scan may sit on.
+            rad_span.eq(mesh.geo_outer - mesh.geo_inner - 2),
+            # (inner+1) .. (outer-1) as radius_cv runs 0..255, in Q4. The +1 on
+            # radius_cv makes the top of the CV land exactly on the outer edge
+            # rather than one step short.
+            radius.eq(((mesh.geo_inner + 1) << RAD_FRAC)
+                      + (((radius_cv + 1) * rad_span) >> (8 - RAD_FRAC))),
         ]
         drive = Signal(unsigned(12))
         pluck_pending = Signal()
@@ -293,6 +299,11 @@ class Orbita(wiring.Component):
         m.d.sync += lfsr.eq(Cat(lfsr[1:], lfsr[0] ^ lfsr[2] ^ lfsr[3] ^ lfsr[5]))
 
         # --- the scan ---------------------------------------------------------
+        # The circle is sampled *between* cells, not snapped to them. Nearest
+        # cell measured 0.14 roughness on a perfectly smooth field against 0.039
+        # for bilinear -- audible as roughness on the tone, and it also pinned
+        # the radius to whole cells. Both go away by carrying the position in Q4
+        # and blending the four cells around it.
         phase = Signal(PHASE_BITS)
         k_idx = Signal(N_POINTS)
         frac = Signal(10)
@@ -301,27 +312,20 @@ class Orbita(wiring.Component):
             frac.eq(phase[PHASE_BITS - N_POINTS - 10:PHASE_BITS - N_POINTS]),
         ]
 
-        # One multiplier pair, shared between the two points, by driving the
-        # address straight off the circle ROM output rather than registering it.
-        cos_v = Signal(signed(8))
-        sin_v = Signal(signed(8))
-        ox = Signal(signed(8))
-        oy = Signal(signed(8))
-        # The address is registered rather than fed straight to the snapshot:
-        # circle ROM out (5.6 ns) -> multiply (3.9 ns) -> snapshot address in one
-        # cycle took the sync domain to 49.7 MHz. Costs one state below.
-        addr_r = Signal(range(n * n))
-        m.d.comb += [
-            cos_v.eq(circ_rd.data[:8].as_signed()),
-            sin_v.eq(circ_rd.data[8:].as_signed()),
-            # Round rather than floor: a plain shift biases every negative
-            # offset a cell inwards, which would make the circle an egg.
-            ox.eq((cos_v * radius + (1 << (CIRC_SCALE - 1))) >> CIRC_SCALE),
-            oy.eq((sin_v * radius + (1 << (CIRC_SCALE - 1))) >> CIRC_SCALE),
-            mesh.snap_addr.eq(addr_r),
-        ]
-        addr_c = Signal(range(n * n))
-        m.d.comb += addr_c.eq(((cy + oy) << (n - 1).bit_length()) + (cx + ox))
+        # Angle, interpolated between adjacent ROM entries so the scan position
+        # is continuous rather than stepping 64 times a cycle.
+        c0 = Signal(signed(8)); s0 = Signal(signed(8))
+        c1 = Signal(signed(8)); s1 = Signal(signed(8))
+        ci = Signal(signed(9)); si = Signal(signed(9))
+
+        # Position in Q4 cells. cos is Q6 and radius Q4, so their product is Q10.
+        fx = Signal(unsigned(10)); fy = Signal(unsigned(10))
+        base = Signal(range(n * n))
+        tx = Signal(unsigned(RAD_FRAC)); ty = Signal(unsigned(RAD_FRAC))
+
+        v00 = Signal(signed(16)); v10 = Signal(signed(16))
+        v01 = Signal(signed(16)); v11 = Signal(signed(16))
+        va = Signal(signed(17)); vb = Signal(signed(17))
 
         # Held, not pulsed: the mesh does not reach the strike node until
         # hundreds of cycles into its scan, so an amplitude driven only on the
@@ -330,15 +334,10 @@ class Orbita(wiring.Component):
         strike_amp = Signal(signed(WIDTH + 4))
         m.d.comb += mesh.strike_amp.eq(strike_amp)
 
-        m.d.comb += self.radius_dbg.eq(radius)   # what the overlay draws
+        # The overlay draws whole cells, so hand it the rounded radius.
+        m.d.comb += self.radius_dbg.eq(radius >> RAD_FRAC)
 
-        v0 = Signal(signed(16))
-        v1 = Signal(signed(16))
-        # Registered: the interpolation multiply, the DC blocker and the output
-        # saturation in one cycle off v1 took the sync domain to 49.6 MHz.
         scanned = Signal(signed(16))
-        scanned_c = Signal(signed(16))
-        m.d.comb += scanned_c.eq(v0 + (((v1 - v0) * frac) >> 10))
 
         # --- waveform, for the display ----------------------------------------
         m.submodules.wave_mem = wave_mem = Memory(
@@ -414,8 +413,11 @@ class Orbita(wiring.Component):
                     # signed value reads full scale for an idle jack one count
                     # below zero, and folds back around above 4 V.
                     m.d.sync += [
+                        # 8 bits, not 4: with the scan interpolating between
+                        # cells the radius no longer has to land on one, so the
+                        # CV gets 256 steps across the membrane instead of 16.
                         radius_cv.eq(Mux(pos < 0, 0,
-                                      Mux(pos > 16383, 15, pos[10:14]))),
+                                      Mux(pos > 16383, 255, pos[6:14]))),
                         mesh.fm.eq(_raw(self.i.payload[3])),
                     ]
                     m.d.sync += pitch_q.eq(pitch)
@@ -437,33 +439,83 @@ class Orbita(wiring.Component):
                 m.next = "P0"
 
             with m.State("P0"):
-                # Address the first circle point; its data lands next cycle.
                 m.d.comb += circ_rd.addr.eq(k_idx)
                 m.next = "P1"
 
             with m.State("P1"):
-                # circ_rd.data is point k: latch its mesh address, and ask for
-                # the next point at the same time.
-                m.d.sync += addr_r.eq(addr_c)
+                m.d.sync += [c0.eq(circ_rd.data[:8].as_signed()),
+                             s0.eq(circ_rd.data[8:].as_signed())]
                 m.d.comb += circ_rd.addr.eq(k_idx + 1)
                 m.next = "P2"
 
             with m.State("P2"):
-                # addr_r holds point k, so the snapshot read is in flight;
-                # circ_rd.data is now point k+1, so latch that address too.
-                m.d.sync += addr_r.eq(addr_c)
+                m.d.sync += [c1.eq(circ_rd.data[:8].as_signed()),
+                             s1.eq(circ_rd.data[8:].as_signed())]
                 m.next = "P3"
 
             with m.State("P3"):
-                m.d.sync += v0.eq(mesh.snap_data)
+                # Continuous angle between the two ROM entries.
+                m.d.sync += [ci.eq(c0 + (((c1 - c0) * frac) >> 10)),
+                             si.eq(s0 + (((s1 - s0) * frac) >> 10))]
                 m.next = "P4"
 
             with m.State("P4"):
-                m.d.sync += v1.eq(mesh.snap_data)
-                m.next = "MIX"
+                # Position in Q4 cells. cos is Q6 and radius Q4, so the product
+                # is Q10 and needs six shifts to land back in Q4.
+                m.d.sync += [
+                    fx.eq((cx << RAD_FRAC) + ((ci * radius) >> CIRC_SCALE)),
+                    fy.eq((cy << RAD_FRAC) + ((si * radius) >> CIRC_SCALE)),
+                ]
+                m.next = "P5"
 
-            with m.State("MIX"):
-                m.d.sync += scanned.eq(scanned_c)
+            with m.State("P5"):
+                # Split into the cell to sample from and the blend weights.
+                m.d.sync += [
+                    base.eq(((fy >> RAD_FRAC) << (n - 1).bit_length())
+                            + (fx >> RAD_FRAC)),
+                    tx.eq(fx[:RAD_FRAC]),
+                    ty.eq(fy[:RAD_FRAC]),
+                ]
+                m.next = "A0"
+
+            # Four reads: the cell the position falls in and its right, lower
+            # and lower-right neighbours. The scan never gets within a cell of
+            # the array edge -- radius is capped at outer-1 and every preset
+            # keeps two cells clear -- so base+n+1 is always in range.
+            with m.State("A0"):
+                m.d.comb += mesh.snap_addr.eq(base)
+                m.next = "A1"
+
+            with m.State("A1"):
+                m.d.sync += v00.eq(mesh.snap_data)
+                m.d.comb += mesh.snap_addr.eq(base + 1)
+                m.next = "A2"
+
+            with m.State("A2"):
+                m.d.sync += v10.eq(mesh.snap_data)
+                m.d.comb += mesh.snap_addr.eq(base + n)
+                m.next = "A3"
+
+            with m.State("A3"):
+                m.d.sync += v01.eq(mesh.snap_data)
+                m.d.comb += mesh.snap_addr.eq(base + n + 1)
+                m.next = "A4"
+
+            with m.State("A4"):
+                m.d.sync += v11.eq(mesh.snap_data)
+                m.next = "B0"
+
+            with m.State("B0"):
+                # Blend along x on both rows.
+                m.d.sync += [
+                    va.eq(v00 + (((v10 - v00) * tx) >> RAD_FRAC)),
+                    vb.eq(v01 + (((v11 - v01) * tx) >> RAD_FRAC)),
+                ]
+                m.next = "B1"
+
+            with m.State("B1"):
+                # ...then between the rows.
+                m.d.sync += scanned.eq(va + (((vb - va) * ty) >> RAD_FRAC))
                 m.next = "EMIT"
 
             with m.State("EMIT"):
