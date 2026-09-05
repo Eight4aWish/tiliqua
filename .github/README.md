@@ -19,10 +19,12 @@ is driven.
 | in1 | tension, 1 V/oct | pitch, 1 V/oct, 8 octaves |
 | in2 | strike position | scan radius |
 | in3 | geometry — the hole | geometry — the hole |
-| out0 | mesh L | scan |
-| out1 | mesh R — a quarter turn round | — |
+| out0 | mesh L | scan L |
+| out1 | mesh R — a quarter turn round | scan R — a wider circle |
 
-LACUNA is stereo from two pickups a quarter turn apart on the membrane. That is
+Both are stereo. LACUNA takes two pickups a quarter turn apart on the
+membrane;
+ORBITA scans two circles at different radii. That is
 real decorrelation rather than a widener: measured L/R correlation runs 0.50 on
 the solid heads and near zero on the ring geometries, because angular modes
 differ between the two positions while the radially symmetric ones stay common.

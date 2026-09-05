@@ -15,8 +15,9 @@ pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 | in1 | pitch — 1 V/oct, 0 V is 55 Hz, eight octaves to 7040 Hz |
 | in2 | radius — the scan circle, inner edge to outer edge, 256 steps |
 | in3 | geometry — audio-rate modulation of the hole radius |
-| out0 | scan |
-| GPDI | the membrane, the scan circle, and the circle unrolled |
+| out0 | scan L — the circle in2 selects |
+| out1 | scan R — a quarter of the annulus further out |
+| GPDI | the membrane, both scan circles, and the left one unrolled |
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
 Same eight presets and the same membrane as
@@ -118,13 +119,41 @@ position moves continuously rather than stepping 64 times a cycle. And since
 the circle no longer has to land on a cell, the radius CV gets 256 steps across
 the membrane instead of 16.
 
+## Stereo
+
+Two scan circles, the right one a quarter of the annulus further out than the
+left. Different *radii* rather than different points on the same circle: two
+points on one circle are only a phase offset, which gives width but combs in
+mono, whereas two radii are two genuinely different wavetables. The fixed
+offset means there is always spread — a scheme that crossed the two would have
+a mono null in the middle of in2's travel.
+
+Measured correlation between the channels, sweeping in2:
+
+| in2 | L/R correlation |
+|---|---|
+| 0.5 V | 0.48 |
+| 1.5 V | 0.01 |
+| 2.5 V | −0.19 |
+| 3.5 V | 0.55 |
+| drone | −0.03 |
+
+**It cost no multipliers at all.** The scan is sequential and uses about thirty
+cycles of a 1250-cycle sample, so the FSM walks the position-and-blend sequence
+twice with a channel bit muxing which radius enters the shared multipliers.
+Duplicating the datapath would have needed seven more and almost certainly not
+placed; sharing it needed two muxes and 296 LUTs, and it closed on the seed
+already pinned. The angle is computed once, since only the radius differs.
+
+Expect the right channel 3–5 dB below the left through most of the sweep: it
+sits further out, where the membrane moves less. Physical, not a scaling error.
+
 ## Cost
 
-Whole build: 4039 LUT (16%), 10 BRAM, **19 of 28 multipliers**, both PLLs.
-Sync closes at 69.07 MHz, dvi at 80.04, dvi5x at 471.03 — on seed 4. The
-multipliers are the tightest resource, and bilinear sampling took six of them:
-two to interpolate the angle, two to scale it by the radius, and three to blend
-(one shared). A stereo pair of scan circles would need three more.
+Whole build: 4489 LUT (18%), 10 BRAM, **19 of 28 multipliers**, both PLLs.
+Sync closes at 67.95 MHz, dvi at 76.96, dvi5x at 425.17 — on seed 6. The
+multipliers are the tightest resource; bilinear sampling took six of them, two
+to interpolate the angle, two to scale it by the radius and three to blend.
 
 ## Verification
 
@@ -148,15 +177,12 @@ twice from ORBITA-side changes. Build both after touching `mesh.py`.
 - **Sixty-four points per revolution.** Above roughly 2 kHz the table's own
   harmonics begin to fold. Audible as character rather than as a fault, but it
   is there.
-- **19 of 28 multipliers used.** That is the resource that will run out first,
-  and it is what makes stereo a real cost rather than a free addition.
+- **19 of 28 multipliers used.** That is the resource that will run out first.
+  Anything needing a genuinely parallel datapath, rather than another pass of
+  the existing one, has nine to work with.
 
 ## Where it goes next
 
-- **Stereo.** Two scan circles at different radii are two genuinely different
-  wavetables — unlike two points on the same circle, which is only a phase
-  offset and sums to mono. Costs four more reads, three multipliers and about
-  seven states.
 - **An offset scan circle** would cross a *concentric* hole, recovering the
   flat-segment behaviour on every preset rather than only on the slit and the
   square. Hole radius would become duty cycle.
