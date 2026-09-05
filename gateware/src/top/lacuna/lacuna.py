@@ -75,7 +75,7 @@ class Lacuna(wiring.Component):
     bitstream_help = BitstreamHelp(
         brief="Lacuna: membrane mesh, hole is the instrument",
         io_left=['strike', 'tension', 'position', 'geometry',
-                 'mesh', '', '', ''],
+                 'mesh L', 'mesh R', '', ''],
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
@@ -98,6 +98,7 @@ class Lacuna(wiring.Component):
             "disp_data": Out(8),
             "strike_at": Out(range(n * n)),
             "pickup_at": Out(range(n * n)),
+            "pickup2_at": Out(range(n * n)),
         })
 
     def elaborate(self, platform):
@@ -111,6 +112,7 @@ class Lacuna(wiring.Component):
             self.pickup_dbg.eq(mesh.pickup),
             self.strike_at.eq(mesh.strike_at),
             self.pickup_at.eq(mesh.pickup_at),
+            self.pickup2_at.eq(mesh.pickup2_at),
             # A struck instrument: one pulse, near full scale.
             mesh.strike_amp.eq(C(int(0.9 * (1 << FRAC)), signed(WIDTH + 4))),
         ]
@@ -172,15 +174,20 @@ class Lacuna(wiring.Component):
         # signed(16) keeps the low bits and wraps, turning a loud moment into a
         # full-scale flip of the opposite sign. An occasional click that only
         # happens when it is loud.
-        out_payload = Signal(signed(16))
-        out_wide = Signal(signed(20))
-        m.d.comb += out_wide.eq(mesh.pickup >> (FRAC - 15))
-        with m.If(out_wide > 32767):
-            m.d.comb += out_payload.eq(32767)
-        with m.Elif(out_wide < -32768):
-            m.d.comb += out_payload.eq(-32768)
-        with m.Else():
-            m.d.comb += out_payload.eq(out_wide)
+        def scaled(src):
+            wide = Signal(signed(20))
+            out = Signal(signed(16))
+            m.d.comb += wide.eq(src >> (FRAC - 15))
+            with m.If(wide > 32767):
+                m.d.comb += out.eq(32767)
+            with m.Elif(wide < -32768):
+                m.d.comb += out.eq(-32768)
+            with m.Else():
+                m.d.comb += out.eq(wide)
+            return out
+
+        out_payload = scaled(mesh.pickup)
+        out_payload2 = scaled(mesh.pickup2)
 
         # --- sample-rate FSM ------------------------------------------------------
         m.d.comb += tune_rd.addr.eq(cv_index)
@@ -260,7 +267,7 @@ class Lacuna(wiring.Component):
                 m.d.comb += self.o.valid.eq(1)
                 for k in range(4):
                     m.d.comb += _raw(self.o.payload[k]).eq(
-                        out_payload if k == 0 else 0)
+                        {0: out_payload, 1: out_payload2}.get(k, 0))
                 with m.If(self.o.ready):
                     m.next = "WAIT"
 

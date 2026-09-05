@@ -4,7 +4,7 @@ A 2D membrane mesh whose hole is the instrument.
 
 ```bash
 cd gateware
-AMARANTH_nextpnr_opts="--timing-allow-fail --seed 2" \
+AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
     pdm lacuna build --modeline 1280x720p60
 pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
 ```
@@ -15,7 +15,8 @@ pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
 | in1 | tension — 1 V/oct, 55–880 Hz |
 | in2 | position — strike position, hub to rim |
 | in3 | geometry — audio-rate modulation of the hole radius |
-| out0 | mesh |
+| out0 | mesh L — pickup on the +y axis |
+| out1 | mesh R — a quarter turn round, same radius |
 | GPDI | the membrane, drawn live |
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
@@ -68,6 +69,28 @@ disc.
 
 Verified: octave ratios 2.0000 across the table, and λ² stays under 0.5 on
 every preset.
+
+## Stereo
+
+Two pickups, the second a quarter turn round at the same radius. That placement
+is not arbitrary — the two obvious alternatives are both wrong. A **mirrored**
+point reads *identically* on every symmetric preset: measured correlation 1.00,
+which is mono with extra steps. **+x** sits inside the slit on the slit preset
+and would be silent there, the same bug the strike had. **−x** is where the
+strike lands.
+
+At 45° the angular modes differ between the two while the radially symmetric
+ones stay common, which is what a struck drum actually does. Measured
+correlation between the channels:
+
+| preset | L/R correlation |
+|---|---|
+| solid heads | 0.50 – 0.60 |
+| narrow hole, wide ring, square hole | −0.15 – 0.05 |
+| slit ring | −0.10 |
+
+The ring geometries are essentially two independent channels. It costs one
+comparator, one register and a multiply — no extra cycles.
 
 ## The video
 
@@ -157,10 +180,6 @@ a full device crash.
 
 ## Where it goes next
 
-- **Stereo.** The pickup is a single comparator, so a second one is nearly
-  free — no multipliers, no extra cycles. It has to be perpendicular and at a
-  different radius: a mirrored point reads identically on every symmetric
-  preset and would give mono.
 - **A feedback path.** Injecting the module's own output per sample would make
   the surface part of a patch rather than an endpoint.
 - **A larger mesh**, for more distinct modes in the audio band.

@@ -66,7 +66,7 @@ pdm install
 ./scripts/build_bitstreams_fork.sh
 
 # or one at a time
-AMARANTH_nextpnr_opts="--timing-allow-fail --seed 2" \
+AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
     pdm lacuna build --modeline 1280x720p60
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 3" \
     pdm orbita build --modeline 1280x720p60

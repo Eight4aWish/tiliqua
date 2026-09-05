@@ -134,6 +134,14 @@ class Mesh(wiring.Component):
             "strike_amp": In(signed(WIDTH + 4)),
             # --- what comes out ---
             "pickup":     Out(signed(WIDTH)),
+            # A second pickup at 45 degrees, same radius. Not the mirror of the
+            # first, which reads identically on every symmetric preset and would
+            # give mono; not +x, which sits inside the slit on the slit preset
+            # and would be silent there; not -x, which is where the strike is.
+            # Angular modes differ between 45 and 90 degrees while the radially
+            # symmetric ones are common to both -- which is what a struck drum
+            # actually does.
+            "pickup2":    Out(signed(WIDTH)),
             # The live geometry, after the preset and in3 have had their say.
             # A top level needs it to scale a control across the membrane that
             # actually exists rather than across absolute cell counts.
@@ -144,6 +152,7 @@ class Mesh(wiring.Component):
             # geometry, which is most of why they are worth seeing.
             "strike_at":  Out(range(n * n)),
             "pickup_at":  Out(range(n * n)),
+            "pickup2_at": Out(range(n * n)),
             # --- display snapshot, read from the `dvi` domain ---
             "disp_addr":  In(range(n * n)),
             "disp_data":  Out(8),
@@ -323,9 +332,27 @@ class Mesh(wiring.Component):
         # multiply above on the per-node path.
         strike_node = Signal(AW)
         pickup_node = Signal(AW)
+        pickup2_node = Signal(AW)
+        # 181/256 is 1/sqrt(2) to within a thousandth: the second pickup sits at
+        # the same radius as the first, a quarter turn round. Verified inside
+        # the membrane and clear of both the slit and the square hole on all
+        # eight presets.
+        #
+        # The thin ring looks unbalanced over a short simulation -- 1% of the
+        # first pickup at 500 samples -- but that is the wave not having arrived
+        # yet rather than a bad position. It is the slowest preset by a long way
+        # (lam2 0.005) and the second pickup is 135 degrees round from the
+        # strike against the first's 90. By 1500 samples, 31 ms, the two are
+        # within 6% of each other.
+        #
+        # Registered in two stages for the same reason strike_raw is: geometry,
+        # multiply and node address in one cycle does not close 60 MHz.
+        p2 = Signal(unsigned(6))
+        m.d.sync += p2.eq((pickup_r * 181 + 128) >> 8)
         m.d.sync += [
             strike_node.eq(cy * n + cx - strike_r),
             pickup_node.eq((cy + pickup_r) * n + cx),
+            pickup2_node.eq((cy + p2) * n + (cx + p2)),
         ]
 
         # --- pipeline --------------------------------------------------------
@@ -493,10 +520,13 @@ class Mesh(wiring.Component):
             ]
 
         m.d.comb += [self.strike_at.eq(strike_node),
-                     self.pickup_at.eq(pickup_node)]
+                     self.pickup_at.eq(pickup_node),
+                     self.pickup2_at.eq(pickup2_node)]
 
         with m.If(wr_valid & (wr_addr == pickup_node)):
             m.d.sync += self.pickup.eq(written)
+        with m.If(wr_valid & (wr_addr == pickup2_node)):
+            m.d.sync += self.pickup2.eq(written)
 
         # --- run control -----------------------------------------------------
         with m.FSM():

@@ -15,7 +15,7 @@ flash it as follows:
 .. code-block:: bash
 
    # from the `gateware` directory
-   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 2" \
+   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
        pdm lacuna build --modeline 720x720p60r2
    pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
 
@@ -129,15 +129,20 @@ class LacunaTop(Elaboratable):
         # show as one frame with a marker a cell out.
         strike_dvi = Signal(range(n * n))
         pickup_dvi = Signal(range(n * n))
+        pickup2_dvi = Signal(range(n * n))
         m.submodules.strike_cdc = FFSynchronizer(
                 core.strike_at, strike_dvi, o_domain="dvi")
         m.submodules.pickup_cdc = FFSynchronizer(
                 core.pickup_at, pickup_dvi, o_domain="dvi")
+        m.submodules.pickup2_cdc = FFSynchronizer(
+                core.pickup2_at, pickup2_dvi, o_domain="dvi")
         at_strike = Signal()
         at_pickup = Signal()
+        at_pickup2 = Signal()
         m.d.dvi += [
             at_strike.eq(Cat(cx, cy) == strike_dvi),
             at_pickup.eq(Cat(cx, cy) == pickup_dvi),
+            at_pickup2.eq(Cat(cx, cy) == pickup2_dvi),
         ]
 
         on_mesh = Signal()
@@ -175,8 +180,12 @@ class LacunaTop(Elaboratable):
             # Green: where the next strike will land.
             m.d.comb += [r.eq(0), g.eq(255), b.eq(60)]
         with m.Elif(on_mesh_q & at_pickup):
-            # Amber, dimmer: where the output is listened from.
+            # Amber: the left output, on the +y axis.
             m.d.comb += [r.eq(190), g.eq(120), b.eq(0)]
+        with m.Elif(on_mesh_q & at_pickup2):
+            # Pale amber: the right output, a quarter turn round at the same
+            # radius. Same family as the left so they read as a pair.
+            m.d.comb += [r.eq(255), g.eq(205), b.eq(90)]
         with m.Elif(~on_mesh_q):
             m.d.comb += [r.eq(0), g.eq(0), b.eq(0)]
         with m.Elif(outside):

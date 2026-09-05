@@ -24,7 +24,7 @@
 
 set -e
 
-LACUNA_SEED=2
+LACUNA_SEED=1
 ORBITA_SEED=4
 
 fail=0
