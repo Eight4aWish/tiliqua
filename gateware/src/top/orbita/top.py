@@ -17,7 +17,7 @@ timbre. See research/scan/DESIGN.md.
 .. code-block:: bash
 
    # from the `gateware` directory
-   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 4" \
+   AMARANTH_nextpnr_opts="--timing-allow-fail --seed 6" \
        pdm orbita build --modeline 1280x720p60
    pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 

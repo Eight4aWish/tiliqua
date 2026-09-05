@@ -25,7 +25,7 @@
 set -e
 
 LACUNA_SEED=1
-ORBITA_SEED=4
+ORBITA_SEED=6
 
 fail=0
 archives=()
