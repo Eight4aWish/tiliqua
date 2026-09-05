@@ -4,7 +4,7 @@ The membrane as a wavetable, not as a drum.
 
 ```bash
 cd gateware
-AMARANTH_nextpnr_opts="--timing-allow-fail --seed 3" \
+AMARANTH_nextpnr_opts="--timing-allow-fail --seed 4" \
     pdm orbita build --modeline 1280x720p60
 pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 ```
@@ -13,7 +13,7 @@ pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 |---|---|
 | in0 | drive — a gate edge plucks; a held level keeps it alive as a drone |
 | in1 | pitch — 1 V/oct, 0 V is 55 Hz, eight octaves to 7040 Hz |
-| in2 | radius — the scan circle, inner edge to outer edge |
+| in2 | radius — the scan circle, inner edge to outer edge, 256 steps |
 | in3 | geometry — audio-rate modulation of the hole radius |
 | out0 | scan |
 | GPDI | the membrane, the scan circle, and the circle unrolled |
@@ -104,11 +104,27 @@ problem, not the damping.
 slightly smoother (96%), but at a 750 Hz update rate that is a kick every
 93.75 Hz — a periodic step in the wavetable, right in the audio band.
 
+## Between the cells, not on them
+
+The scan carries its position in Q4 cells and blends the four cells around it,
+rather than snapping to the nearest. That matters more than it sounds: on a
+perfectly smooth field, nearest-cell addressing measures **0.14** roughness
+against **0.039** for bilinear, and on the real thing it measured **0.579**.
+After bilinear the same test gives **0.029–0.094**. It was the difference
+between an instrument that wanted reverb over it and one that does not.
+
+The angle is interpolated between adjacent ROM entries too, so the scan
+position moves continuously rather than stepping 64 times a cycle. And since
+the circle no longer has to land on a cell, the radius CV gets 256 steps across
+the membrane instead of 16.
+
 ## Cost
 
-Adds about one BRAM, three multipliers and a few hundred LUTs over LACUNA.
-Whole build: 3568 LUT (14%), 8 BRAM, 13 of 28 multipliers, both PLLs. Sync
-closes at 72.79 MHz, dvi at 77.27, dvi5x at 449.
+Whole build: 4039 LUT (16%), 10 BRAM, **19 of 28 multipliers**, both PLLs.
+Sync closes at 69.07 MHz, dvi at 80.04, dvi5x at 471.03 — on seed 4. The
+multipliers are the tightest resource, and bilinear sampling took six of them:
+two to interpolate the angle, two to scale it by the radius, and three to blend
+(one shared). A stereo pair of scan circles would need three more.
 
 ## Verification
 
@@ -132,6 +148,8 @@ twice from ORBITA-side changes. Build both after touching `mesh.py`.
 - **Sixty-four points per revolution.** Above roughly 2 kHz the table's own
   harmonics begin to fold. Audible as character rather than as a fault, but it
   is there.
+- **19 of 28 multipliers used.** That is the resource that will run out first,
+  and it is what makes stereo a real cost rather than a free addition.
 
 ## Where it goes next
 
