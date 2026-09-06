@@ -61,7 +61,28 @@ from orbita import Orbita          # noqa: E402
 # The mesh is 32x32 and each cell is drawn as a CELL x CELL block, which is a
 # shift rather than a divide. 32*16 is 512, centred in whatever the modeline
 # gives us.
-CELL_SHIFT = 4
+def cell_shift(n, modeline):
+    """Largest power-of-two upscale of the mesh that fits the shorter axis."""
+    fits = min(modeline.h_active, modeline.v_active)
+    for s in range(5, -1, -1):
+        if (n << s) <= fits:
+            return s
+    raise ValueError(f"a {n}x{n} mesh does not fit this modeline at any scale")
+
+
+def wave_shift(points, side):
+    """Pixels per scan point, as a shift.
+
+    The strip cannot simply span the mesh: side/points is a shift only when n
+    is a power of two, and a 48-cell mesh at 8x is 384 = 3 x 128. So it takes
+    the widest power-of-two multiple of the point count that still fits under
+    the drum -- 64 points x 8 px = 512 at 32x32, exactly the mesh width as it
+    has always been, and 128 x 2 = 256 at 48x48.
+    """
+    for s in range(5, -1, -1):
+        if (points << s) <= side:
+            return s
+    return 0
 
 
 class OrbitaTop(Elaboratable):
@@ -70,7 +91,9 @@ class OrbitaTop(Elaboratable):
         assert clock_settings.modeline is not None, (
             "orbita draws the mesh and races the beam to do it, so it needs a "
             "static modeline: pass e.g. --modeline 1280x720p60")
-        self.core = Orbita(video=True)
+        # LACUNA_N picks the grid size, as it does for LACUNA itself.
+        self.core = Orbita(video=True,
+                           n=int(os.environ.get("LACUNA_N", "32")))
         self.core.audio_clock = clock_settings.audio_clock
         self.clock_settings = clock_settings
         self.pmod0 = eurorack_pmod.EurorackPmod(clock_settings.audio_clock)
@@ -105,11 +128,12 @@ class OrbitaTop(Elaboratable):
                          .eq(getattr(self.clock_settings.modeline, member)))
 
         n = self.core.n
-        side = n << CELL_SHIFT
+        shift = cell_shift(n, self.clock_settings.modeline)
+        side = n << shift
         x0 = (self.clock_settings.modeline.h_active - side) // 2
         y0 = (self.clock_settings.modeline.v_active - side) // 2
         assert x0 >= 0 and y0 >= 0, (
-            f"a {n}x{n} mesh at {1 << CELL_SHIFT}x does not fit this modeline")
+            f"a {n}x{n} mesh at {1 << shift}x does not fit this modeline")
 
         x, y = dvi_tgen.x, dvi_tgen.y
 
@@ -124,22 +148,28 @@ class OrbitaTop(Elaboratable):
         cyc = Signal(range(n))
         # Fold the look-ahead into the offset: x + 2 then - x0 is two carry
         # chains in series on the pixel path, and one constant does both.
+        # cyc*n + cxc, not Cat: the concatenation is the cell address only
+        # when n is a power of two, and 48 is not.
         m.d.comb += [
-            cxc.eq((x + (2 - x0)) >> CELL_SHIFT),
-            cyc.eq((y - y0) >> CELL_SHIFT),
+            cxc.eq((x + (2 - x0)) >> shift),
+            cyc.eq((y - y0) >> shift),
         ]
-        m.d.dvi += core.disp_addr.eq(Cat(cxc, cyc))
+        m.d.dvi += core.disp_addr.eq(cyc * n + cxc)
 
         # --- waveform strip ---------------------------------------------------
         # The circle unrolled, drawn under the mesh: 64 bins across the same
         # 512 px, so a feature at an angle on the ring sits above the sample it
         # produced. Phase-locked by construction -- the bin index is the scan
         # position, not a free-running capture -- so a steady tone stands still.
+        points = 1 << self.core.n_points
+        wsh = wave_shift(points, side)
+        strip_w = points << wsh
+        sx0 = (self.clock_settings.modeline.h_active - strip_w) // 2
         strip_y0 = y0 + side + 8
         strip_h = self.clock_settings.modeline.v_active - strip_y0 - 8
         assert strip_h >= 32, "no room under the mesh for the waveform strip"
         strip_cy = strip_y0 + strip_h // 2
-        m.d.dvi += core.wave_addr.eq((x + (2 - x0)) >> (CELL_SHIFT - 1))
+        m.d.dvi += core.wave_addr.eq((x + (2 - sx0)) >> wsh)
 
         # Kept narrow deliberately: the row offset within the strip needs 8
         # bits, not the 12 of a raw pixel coordinate, and carrying the wide
@@ -154,7 +184,7 @@ class OrbitaTop(Elaboratable):
         in_strip_q = Signal()
         m.d.comb += [
             ys.eq(y - strip_y0),
-            in_strip.eq((xn >= x0) & (xn < x0 + side) &
+            in_strip.eq((xn >= sx0) & (xn < sx0 + strip_w) &
                         (y >= strip_y0) & (y < strip_y0 + strip_h)),
         ]
         m.d.dvi += [

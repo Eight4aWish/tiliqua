@@ -50,7 +50,7 @@ from amaranth.lib import data, stream, wiring
 from amaranth.lib.memory import Memory
 from amaranth.lib.wiring import In, Out
 
-from mesh import Mesh, PRESETS, WIDTH, FRAC, LAM_FRAC, _raw
+from mesh import Mesh, PRESETS, PRESETS_BY_N, WIDTH, FRAC, LAM_FRAC, _raw
 
 try:
     from tiliqua.dsp import ASQ
@@ -76,6 +76,13 @@ VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 PHASE_BITS = 32
 
 N_POINTS = 6                  # 64 points on the circle
+# One scan point per cell of circumference, roughly. At 32x32 a mid-radius
+# circle is about 63 cells round and 64 points matches it; a 48x48 membrane is
+# half as big again, so 128 keeps the same detail -- and doubles the pitch at
+# which the table's own harmonics start to fold. The scan is sequential and
+# reads one interpolated position per sample whatever the table length, so this
+# costs a bigger circle ROM and nothing else.
+N_POINTS_BY_N = {32: 6, 48: 7}
 CIRC_SCALE = 6                # unit vectors stored as cos*64
 RAD_FRAC = 4                  # sub-cell precision of the scan position
 
@@ -101,6 +108,18 @@ UPDATE_RATE = FS / UPDATE_DIV
 # synthesis is for. Faster than this and you are listening to the membrane
 # rather than to the shape it makes.
 F_EVOLVE = 1.0
+# The 17x above is a property of the 32x32 grid, not a constant. The highest
+# spatial mode sits sqrt(8/-mu) above the fundamental, and -mu shrinks as the
+# membrane widens: 17x at R=14, 26x at R=22, 36x at R=30. So a wider membrane
+# has to evolve *slower* to keep its checkerboard mode below hearing. Holding
+# the top of the series near 17 Hz:
+#
+#     32x32   spread 16.9x   F_EVOLVE 1.00   -> checkerboard 16.9 Hz
+#     48x48   spread 26.3x   F_EVOLVE 0.65   -> checkerboard 17.1 Hz
+#
+# The cost is that a held note morphs over about 1.5 s rather than 1 s, which
+# is a change of character rather than a fault.
+F_EVOLVE_BY_N = {32: 1.0, 48: 0.65}
 
 K_FRAC = 30
 INV_MU_FRAC = 10
@@ -142,8 +161,8 @@ OUT_SHIFT = 0
 DRIVE_SHIFT = 1
 
 
-def lam2_for_presets(presets):
-    """lam2 that puts each preset's fundamental at F_EVOLVE.
+def lam2_for_presets(presets, f_evolve=F_EVOLVE):
+    """lam2 that puts each preset's fundamental at f_evolve.
 
     Both terms are compile-time constants -- the target frequency and each
     preset's own 1/-mu -- so this is a table, not a multiplier. Normalising by
@@ -151,7 +170,7 @@ def lam2_for_presets(presets):
     morphs a couple of octaves faster than the drum head and changing preset
     would change how alive the sound is.
     """
-    k = 2.0 * (1.0 - math.cos(2.0 * math.pi * F_EVOLVE / UPDATE_RATE))
+    k = 2.0 * (1.0 - math.cos(2.0 * math.pi * f_evolve / UPDATE_RATE))
     k_q = int(k * (1 << K_FRAC))
     out = []
     for (_o, _i, _sq, _sl, inv_mu) in presets:
@@ -169,11 +188,11 @@ def nco_table():
     return out
 
 
-def circle_table():
+def circle_table(n_points=N_POINTS):
     """Unit circle as (cos, sin) packed into 16 bits, cos in the low byte."""
     out = []
-    for k in range(1 << N_POINTS):
-        a = 2.0 * math.pi * k / (1 << N_POINTS)
+    for k in range(1 << n_points):
+        a = 2.0 * math.pi * k / (1 << n_points)
         c = int(round(math.cos(a) * (1 << CIRC_SCALE)))
         s = int(round(math.sin(a) * (1 << CIRC_SCALE)))
         out.append((c & 0xFF) | ((s & 0xFF) << 8))
@@ -189,12 +208,23 @@ class Orbita(wiring.Component):
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
-    def __init__(self, n=32, presets=PRESETS, video=False,
-                 update_div=UPDATE_DIV):
+    def __init__(self, n=32, presets=None, video=False,
+                 update_div=UPDATE_DIV, n_points=None, f_evolve=None):
         self.n = n
         self.update_div = update_div
         self.video = video
+        # All three follow the grid size unless overridden.
+        if presets is None:
+            assert n in PRESETS_BY_N, (
+                f"no preset table for a {n}x{n} grid -- generate one with "
+                f"research/mesh/presets.py and add it to mesh.py")
+            presets = PRESETS_BY_N[n]
         self.presets = presets
+        self.n_points = (n_points if n_points is not None
+                         else N_POINTS_BY_N.get(n, N_POINTS))
+        self.f_evolve = (f_evolve if f_evolve is not None
+                         else F_EVOLVE_BY_N.get(n, F_EVOLVE))
+        n_points = self.n_points
         # Exposed for testbenches: the raw scanned value before output scaling.
         self.scan_dbg = Signal(signed(16))
         # Exposed so the top level can draw the scan circle over the mesh.
@@ -209,7 +239,7 @@ class Orbita(wiring.Component):
             # The circle unrolled: one bin per scan point, so the display can
             # draw the waveform as it is actually read, phase-locked to the
             # ring above it rather than free-running.
-            "wave_addr": In(N_POINTS),
+            "wave_addr": In(n_points),
             "wave_data": Out(8),
         })
 
@@ -232,7 +262,8 @@ class Orbita(wiring.Component):
         nco_rd = nco_mem.read_port()
 
         m.submodules.circ_mem = circ_mem = Memory(
-            shape=unsigned(16), depth=1 << N_POINTS, init=circle_table())
+            shape=unsigned(16), depth=1 << self.n_points,
+            init=circle_table(self.n_points))
         circ_rd = circ_mem.read_port()
 
         # --- preset, cycled by the encoder ------------------------------------
@@ -259,7 +290,7 @@ class Orbita(wiring.Component):
         # lam2 is a per-preset constant here: pitch comes from the scan rate,
         # so the only thing lam2 sets is how fast the membrane itself moves.
         lam2 = Signal(LAM_FRAC)
-        lam_tab = lam2_for_presets(self.presets)
+        lam_tab = lam2_for_presets(self.presets, self.f_evolve)
         with m.Switch(preset_i):
             for p, v in enumerate(lam_tab):
                 with m.Case(p):
@@ -320,11 +351,12 @@ class Orbita(wiring.Component):
         # the radius to whole cells. Both go away by carrying the position in Q4
         # and blending the four cells around it.
         phase = Signal(PHASE_BITS)
-        k_idx = Signal(N_POINTS)
+        k_idx = Signal(self.n_points)
         frac = Signal(10)
         m.d.comb += [
-            k_idx.eq(phase[PHASE_BITS - N_POINTS:]),
-            frac.eq(phase[PHASE_BITS - N_POINTS - 10:PHASE_BITS - N_POINTS]),
+            k_idx.eq(phase[PHASE_BITS - self.n_points:]),
+            frac.eq(phase[PHASE_BITS - self.n_points - 10:
+                          PHASE_BITS - self.n_points]),
         ]
 
         # Angle, interpolated between adjacent ROM entries so the scan position
@@ -373,7 +405,8 @@ class Orbita(wiring.Component):
 
         # --- waveform, for the display ----------------------------------------
         m.submodules.wave_mem = wave_mem = Memory(
-            shape=unsigned(8), depth=1 << N_POINTS, init=[128] * (1 << N_POINTS))
+            shape=unsigned(8), depth=1 << self.n_points,
+            init=[128] * (1 << self.n_points))
         wave_wr = wave_mem.write_port()
         wave_rd = wave_mem.read_port(domain="dvi")
         wv = Signal(signed(16))
