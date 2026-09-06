@@ -2,7 +2,31 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "tiliqua: elaborate core (fast check)",
+      "label": "lacuna: build bitstream (seed 1)",
+      "type": "shell",
+      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 1\" pdm run lacuna build --modeline 1280x720p60",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "orbita: build bitstream (seed 6)",
+      "type": "shell",
+      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 6\" pdm run orbita build --modeline 1280x720p60",
+      "options": { "cwd": "${workspaceFolder}/gateware" },
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "mesh: standalone tests (no toolchain)",
+      "type": "shell",
+      "command": "python test_lacuna.py && python test_orbita.py",
+      "options": { "cwd": "${workspaceFolder}/gateware/src/top/lacuna" },
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "tiliqua: elaborate dsp core (fast check)",
       "type": "shell",
       "command": "pdm run dsp build --dsp-core ${input:core} --skip-build",
       "options": { "cwd": "${workspaceFolder}/gateware" },
@@ -10,15 +34,15 @@
       "group": "build"
     },
     {
-      "label": "tiliqua: build core (full bitstream)",
+      "label": "tiliqua: build dsp core (full bitstream)",
       "type": "shell",
       "command": "pdm run dsp build --dsp-core ${input:core}",
       "options": { "cwd": "${workspaceFolder}/gateware" },
       "problemMatcher": [],
-      "group": { "kind": "build", "isDefault": true }
+      "group": "build"
     },
     {
-      "label": "tiliqua: simulate core",
+      "label": "tiliqua: simulate dsp core",
       "type": "shell",
       "command": "pdm run dsp sim --dsp-core ${input:core}",
       "options": { "cwd": "${workspaceFolder}/gateware" },
@@ -36,8 +60,7 @@
       "type": "shell",
       "command": "pdm run test",
       "options": { "cwd": "${workspaceFolder}/gateware" },
-      "problemMatcher": [],
-      "group": { "kind": "test", "isDefault": true }
+      "problemMatcher": []
     }
   ],
   "inputs": [
@@ -52,7 +75,7 @@
       "id": "core",
       "type": "promptString",
       "description": "DSP core name (see CORES in src/top/dsp/top.py)",
-      "default": "template"
+      "default": "mirror"
     }
   ]
 }
