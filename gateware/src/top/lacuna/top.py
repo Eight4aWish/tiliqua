@@ -131,11 +131,20 @@ class LacunaTop(Elaboratable):
         cy = Signal(range(n))
         # cy*n + cx, not Cat(cx, cy): the concatenation is only the cell
         # address when n is a power of two, and 48 is not.
+        #
+        # The multiply is registered rather than left in the per-pixel path. It
+        # is a function of the row alone -- cy changes once every `1 << shift`
+        # scanlines -- and as combinational logic it cost the dvi domain 3 MHz
+        # it did not have: 48x48 closed the mesh at 67 MHz but missed 74.25 on
+        # dvi. row_base settles one pixel into each new line, hundreds of pixels
+        # before the mesh starts, so the lag is never visible.
+        row_base = Signal(range(n * n))
         cell = Signal(range(n * n))
+        m.d.dvi += row_base.eq(cy * n)
         m.d.comb += [
             cx.eq((xn - x0) >> shift),
             cy.eq((y - y0) >> shift),
-            cell.eq(cy * n + cx),
+            cell.eq(row_base + cx),
             core.disp_addr.eq(cell),
         ]
 
