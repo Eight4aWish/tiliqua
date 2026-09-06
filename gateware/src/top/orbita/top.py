@@ -150,11 +150,19 @@ class OrbitaTop(Elaboratable):
         # chains in series on the pixel path, and one constant does both.
         # cyc*n + cxc, not Cat: the concatenation is the cell address only
         # when n is a power of two, and 48 is not.
+        #
+        # The multiply is registered, for the same reason LACUNA's is: it is a
+        # function of the row, cyc changing once every `1 << shift` scanlines,
+        # and left in the per-pixel path it took dvi to 71.66 MHz against
+        # 74.25. row_base settles one pixel into each line, long before the
+        # mesh area starts.
+        row_base = Signal(range(n * n))
+        m.d.dvi += row_base.eq(cyc * n)
         m.d.comb += [
             cxc.eq((x + (2 - x0)) >> shift),
             cyc.eq((y - y0) >> shift),
         ]
-        m.d.dvi += core.disp_addr.eq(cyc * n + cxc)
+        m.d.dvi += core.disp_addr.eq(row_base + cxc)
 
         # --- waveform strip ---------------------------------------------------
         # The circle unrolled, drawn under the mesh: 64 bins across the same
