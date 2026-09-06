@@ -38,6 +38,8 @@ few microseconds before it goes down the cable, the way the `beamrace`
 top-level does it. A static modeline is therefore required.
 """
 
+import os
+
 from amaranth import *
 from amaranth.lib import wiring
 from amaranth.lib.cdc import FFSynchronizer
@@ -63,7 +65,12 @@ class LacunaTop(Elaboratable):
         assert clock_settings.modeline is not None, (
             "lacuna draws the mesh and races the beam to do it, so it needs a "
             "static modeline: pass e.g. --modeline 720x720p60r2")
-        self.core = Lacuna(video=True)
+        # LACUNA_LANES sweeps the scan width from the shell without touching
+        # upstream's build CLI. One lane is the shipped instrument; wider ones
+        # are bit-identical (test_lanes.py) and exist so a larger membrane can
+        # fit the 1250-cycle budget. Timing is the open question, not function.
+        self.core = Lacuna(video=True,
+                           lanes=int(os.environ.get("LACUNA_LANES", "1")))
         self.core.audio_clock = clock_settings.audio_clock
         self.clock_settings = clock_settings
         self.pmod0 = eurorack_pmod.EurorackPmod(clock_settings.audio_clock)
