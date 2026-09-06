@@ -53,10 +53,16 @@ from tiliqua.video import dvi
 from lacuna import Lacuna
 
 
-# The mesh is 32x32 and each cell is drawn as a CELL x CELL block, which is a
-# shift rather than a divide and keeps the multipliers for the mesh. 32*16 is
-# 512, centred inside whatever the modeline gives us.
-CELL_SHIFT = 4
+# Each cell is drawn as a square block, upscaled by a shift rather than a
+# divide so the multipliers stay with the mesh. The largest shift that fits the
+# modeline's shorter axis: 32x32 gets 16x (512 px) and 48x48 gets 8x (384),
+# both centred in whatever the modeline gives us.
+def cell_shift(n, modeline):
+    fits = min(modeline.h_active, modeline.v_active)
+    for s in range(5, -1, -1):
+        if (n << s) <= fits:
+            return s
+    raise ValueError(f"a {n}x{n} mesh does not fit this modeline at any scale")
 
 
 class LacunaTop(Elaboratable):
@@ -70,6 +76,7 @@ class LacunaTop(Elaboratable):
         # are bit-identical (test_lanes.py) and exist so a larger membrane can
         # fit the 1250-cycle budget. Timing is the open question, not function.
         self.core = Lacuna(video=True,
+                           n=int(os.environ.get("LACUNA_N", "32")),
                            lanes=int(os.environ.get("LACUNA_LANES", "1")))
         self.core.audio_clock = clock_settings.audio_clock
         self.clock_settings = clock_settings
@@ -107,11 +114,12 @@ class LacunaTop(Elaboratable):
                          .eq(getattr(self.clock_settings.modeline, member)))
 
         n = self.core.n
-        side = n << CELL_SHIFT
+        shift = cell_shift(n, self.clock_settings.modeline)
+        side = n << shift
         x0 = (self.clock_settings.modeline.h_active - side) // 2
         y0 = (self.clock_settings.modeline.v_active - side) // 2
         assert x0 >= 0 and y0 >= 0, (
-            f"a {n}x{n} mesh at {1 << CELL_SHIFT}x does not fit this modeline")
+            f"a {n}x{n} mesh at {1 << shift}x does not fit this modeline")
 
         x, y = dvi_tgen.x, dvi_tgen.y
 
@@ -121,10 +129,14 @@ class LacunaTop(Elaboratable):
         m.d.comb += xn.eq(x + 1)
         cx = Signal(range(n))
         cy = Signal(range(n))
+        # cy*n + cx, not Cat(cx, cy): the concatenation is only the cell
+        # address when n is a power of two, and 48 is not.
+        cell = Signal(range(n * n))
         m.d.comb += [
-            cx.eq((xn - x0) >> CELL_SHIFT),
-            cy.eq((y - y0) >> CELL_SHIFT),
-            core.disp_addr.eq(Cat(cx, cy)),
+            cx.eq((xn - x0) >> shift),
+            cy.eq((y - y0) >> shift),
+            cell.eq(cy * n + cx),
+            core.disp_addr.eq(cell),
         ]
 
         # Whether the pixel being coloured now -- one behind the address -- is
@@ -147,9 +159,9 @@ class LacunaTop(Elaboratable):
         at_pickup = Signal()
         at_pickup2 = Signal()
         m.d.dvi += [
-            at_strike.eq(Cat(cx, cy) == strike_dvi),
-            at_pickup.eq(Cat(cx, cy) == pickup_dvi),
-            at_pickup2.eq(Cat(cx, cy) == pickup2_dvi),
+            at_strike.eq(cell == strike_dvi),
+            at_pickup.eq(cell == pickup_dvi),
+            at_pickup2.eq(cell == pickup2_dvi),
         ]
 
         on_mesh = Signal()

@@ -41,7 +41,7 @@ from amaranth.lib import data, stream, wiring
 from amaranth.lib.memory import Memory
 from amaranth.lib.wiring import In, Out
 
-from mesh import Mesh, PRESETS, WIDTH, FRAC, LAM_FRAC, _raw
+from mesh import (Mesh, PRESETS, PRESETS_BY_N, WIDTH, FRAC, LAM_FRAC, _raw)
 
 try:
     from tiliqua.dsp import ASQ
@@ -56,17 +56,23 @@ LAM_MAX = 1 << (LAM_FRAC - 1)   # lam2 = 0.5, the stability limit
 
 FS = 48000
 F_LO, OCTAVES = 55.0, 4       # 55-880 Hz; 880 is under every preset's limit
+# The bottom of the 1 V/oct range per grid size. lam2 must stay under 0.5, and
+# the preset with the largest 1/-mu -- the biggest solid head -- reaches it
+# first, so that preset sets the ceiling: 906 Hz at 32x32, 582 at 48x48, 428 at
+# 64x64. Four octaves have to sit under it, so a wider membrane starts lower.
+# 0 V stays on an A either way.
+F_LO_BY_N = {32: 55.0, 48: 27.5}
 CV_BITS = 10                  # 1024 steps over 4 octaves, ~4.7 cents each
 VOCT_Q16 = 4194               # 256 steps per 4000 counts (1 V), in Q16
 
 
-def tuning_table():
+def tuning_table(f_lo=F_LO):
     """K(f) = 2*(1 - cos(2*pi*f/fs)), so lam2 = K * (1/-mu). Exponential in
     pitch, so the table is the whole 1 V/oct map and each preset only needs its
     own 1/-mu to land on the same note."""
     out = []
     for i in range(1 << CV_BITS):
-        f = F_LO * 2.0 ** (OCTAVES * i / (1 << CV_BITS))
+        f = f_lo * 2.0 ** (OCTAVES * i / (1 << CV_BITS))
         k = 2.0 * (1.0 - math.cos(2.0 * math.pi * f / FS))
         out.append(int(k * (1 << K_FRAC)))
     return out
@@ -81,10 +87,18 @@ class Lacuna(wiring.Component):
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
-    def __init__(self, n=32, base_loss=13, presets=PRESETS, video=False,
-                 lanes=1):
+    def __init__(self, n=32, base_loss=13, presets=None, video=False,
+                 lanes=1, f_lo=None):
         self.n = n
         self.video = video
+        # Both follow the grid size unless overridden. A caller that passes its
+        # own presets is on its own for the pitch range too.
+        if presets is None:
+            assert n in PRESETS_BY_N, (
+                f"no preset table for a {n}x{n} grid -- generate one with "
+                f"research/mesh/presets.py and add it to mesh.py")
+            presets = PRESETS_BY_N[n]
+        self.f_lo = f_lo if f_lo is not None else F_LO_BY_N.get(n, F_LO)
         # Cells retired per cycle. See Mesh: one lane costs one cycle a node,
         # which is 1037 of 1250 at 32x32 and does not fit any larger.
         self.lanes = lanes
@@ -125,7 +139,8 @@ class Lacuna(wiring.Component):
         ]
 
         m.submodules.tuning = tuning = Memory(
-            shape=unsigned(K_FRAC), depth=1 << CV_BITS, init=tuning_table())
+            shape=unsigned(K_FRAC), depth=1 << CV_BITS,
+            init=tuning_table(self.f_lo))
         tune_rd = tuning.read_port()
 
         # --- preset, cycled by the encoder ------------------------------------

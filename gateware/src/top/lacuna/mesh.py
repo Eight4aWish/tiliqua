@@ -72,6 +72,30 @@ PRESETS = [
     (14,  8, 0, 1,  4765),    # slit ring
 ]
 
+# The same eight geometries on a 48x48 grid, from research/mesh/presets.py.
+# The radii scale with the array -- the assert below keeps every preset two
+# cells clear of the edge -- but inv_mu does NOT scale with them: mu is a
+# property of the masked domain, so each one is recomputed against the mask
+# this file builds. That generator regenerates the 32x32 table above exactly,
+# which is what says it can be trusted for any other size.
+#
+# A bigger membrane is a lower one. The largest 1/-mu here is 88328 against
+# 36410, so the tension at which a wave would cross a cell per sample now
+# arrives at 582 Hz rather than 906, and lacuna.py drops the 1 V/oct range an
+# octave to suit. That is the physics of a wider drum, not a compromise.
+PRESETS_48 = [
+    (22,  0, 0, 0,  88328),   # drum head
+    (16,  0, 0, 0,  47046),   # medium head
+    (11,  0, 0, 0,  22720),   # small head
+    (22,  5, 0, 0,  33756),   # narrow hole
+    (22, 11, 0, 0,  14480),   # wide ring
+    (22, 17, 0, 0,   3494),   # thin ring
+    (22,  8, 1, 0,  21160),   # square hole
+    (22, 13, 0, 1,   9788),   # slit ring
+]
+
+PRESETS_BY_N = {32: PRESETS, 48: PRESETS_48}
+
 
 def _raw(v):
     """ASQ is a fixed-point type in-tree and a plain signed(16) standalone."""
