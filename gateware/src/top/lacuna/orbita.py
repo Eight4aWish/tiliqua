@@ -330,8 +330,7 @@ class Orbita(wiring.Component):
             # exactly its offset. The Mux guards the case where in3 has closed
             # the annulus down: geo_inner clamps at outer-2 in mesh.py, which
             # would otherwise underflow this to 63.
-            rad_span.eq(Mux(mesh.geo_outer > mesh.geo_inner + 3,
-                            mesh.geo_outer - mesh.geo_inner - 3, 0)),
+            rad_span.eq(mesh.geo_outer - mesh.geo_inner - 2),
             # (inner+1) .. (outer-1) as radius_cv runs 0..255, in Q4. The +1 on
             # radius_cv makes the top of the CV land exactly on the outer edge
             # rather than one step short.
@@ -344,7 +343,7 @@ class Orbita(wiring.Component):
             # The fixed offset means there is always spread -- a scheme that
             # crossed the two would have a mono null in the middle of in2.
             rad_r_raw.eq(radius + (rad_span << 2)),
-            rad_max.eq((mesh.geo_outer - 2) << RAD_FRAC),
+            rad_max.eq((mesh.geo_outer - 1) << RAD_FRAC),
             radius_r.eq(Mux(rad_r_raw > rad_max, rad_max, rad_r_raw)),
         ]
         drive = Signal(unsigned(12))
@@ -558,8 +557,12 @@ class Orbita(wiring.Component):
             with m.State("P5"):
                 # Split into the cell to sample from and the blend weights.
                 m.d.sync += [
-                    base.eq(((fy >> RAD_FRAC) << (n - 1).bit_length())
-                            + (fx >> RAD_FRAC)),
+                    # row*n + col. This was a shift by (n-1).bit_length(),
+                    # which is a multiply by n only when n is a power of two:
+                    # 5 bits for 32, but 6 for 48, so the scan addressed a
+                    # 64-wide grid on a 48-wide membrane and read scattered
+                    # wrong cells, many of them masked to zero.
+                    base.eq((fy >> RAD_FRAC) * n + (fx >> RAD_FRAC)),
                     tx.eq(fx[:RAD_FRAC]),
                     ty.eq(fy[:RAD_FRAC]),
                 ]

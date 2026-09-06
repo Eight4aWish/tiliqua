@@ -240,7 +240,13 @@ class OrbitaTop(Elaboratable):
         # Squares of numbers this small are lookups, not multipliers: three
         # DSP blocks in the pixel path made placement tight enough that the
         # 371 MHz serialiser stopped closing, and it contains none of our logic.
-        SQ = Array([C(v * v, unsigned(9)) for v in range(n // 2 + 1)])
+        # Nine bits held every square up to 16*16 = 256, which is all a 32x32
+        # mesh can produce. A 48x48 one reaches 24*24 = 576 and wrapped to 64,
+        # so every distance of 23 or more read as tiny -- drawing a spurious
+        # ring around the edge of the mesh box and putting the overlay at the
+        # wrong radius. Width it from the grid.
+        SQW = ((n // 2) ** 2).bit_length()
+        SQ = Array([C(v * v, unsigned(SQW)) for v in range(n // 2 + 1)])
         adx = Signal(range(n // 2 + 1))
         ady = Signal(range(n // 2 + 1))
         # Signed and one bit wider: rad_q.as_signed() on a 4-bit value
