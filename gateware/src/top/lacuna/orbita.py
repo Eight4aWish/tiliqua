@@ -316,7 +316,22 @@ class Orbita(wiring.Component):
         rad_max = Signal(unsigned(5 + RAD_FRAC))
         m.d.sync += [
             # Cells between the two edges the scan may sit on.
-            rad_span.eq(mesh.geo_outer - mesh.geo_inner - 2),
+            #
+            # Two cells short of the rim, not one. At outer-1 the bilinear
+            # footprint straddles the staircased mask boundary: measured on the
+            # 48x48 drum head, 16 of the 128 scan points lose up to 8% of their
+            # blend weight to cells the mesh writes as zero. That is 16 steps
+            # per revolution -- a buzz at 16x the fundamental, and audible as
+            # crackle. At outer-2 no scan point touches the boundary on any
+            # preset, at either grid size.
+            #
+            # It bites hardest on the right channel, which sits pinned at the
+            # clamp for the top quarter of in2's travel -- a quarter being
+            # exactly its offset. The Mux guards the case where in3 has closed
+            # the annulus down: geo_inner clamps at outer-2 in mesh.py, which
+            # would otherwise underflow this to 63.
+            rad_span.eq(Mux(mesh.geo_outer > mesh.geo_inner + 3,
+                            mesh.geo_outer - mesh.geo_inner - 3, 0)),
             # (inner+1) .. (outer-1) as radius_cv runs 0..255, in Q4. The +1 on
             # radius_cv makes the top of the CV land exactly on the outer edge
             # rather than one step short.
@@ -329,7 +344,7 @@ class Orbita(wiring.Component):
             # The fixed offset means there is always spread -- a scheme that
             # crossed the two would have a mono null in the middle of in2.
             rad_r_raw.eq(radius + (rad_span << 2)),
-            rad_max.eq((mesh.geo_outer - 1) << RAD_FRAC),
+            rad_max.eq((mesh.geo_outer - 2) << RAD_FRAC),
             radius_r.eq(Mux(rad_r_raw > rad_max, rad_max, rad_r_raw)),
         ]
         drive = Signal(unsigned(12))
