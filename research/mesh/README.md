@@ -33,7 +33,26 @@ ECP5 with all 28 DSP tiles left over.
 collapses back through itself and sets up interference. Orange is positive
 displacement, blue negative, one shared scale across all twelve frames.*
 
-## Result: the modes are right
+## Result: the modes are right — at R=30
+
+**These numbers are for a radius-30 membrane, which needs a 64×64 grid. LACUNA
+ships at radius 14 on 32×32, where they are roughly four times worse.** Nothing
+below is wrong, but do not quote it as the accuracy of the instrument.
+`mode_accuracy.py` measures all three sizes against the same Bessel ratios:
+
+| | worst error, out to 3.65× the fundamental | degenerate-pair split (mean / max) |
+|---|---|---|
+| R=14 (n=32, shipped) | 1.16% | 0.79% / 4.68% |
+| R=22 (n=48) | 0.47% | 0.39% / 2.07% |
+| R=30 (n=64, below) | 0.25% | 0.28% / 0.98% |
+
+The split matters more than the error. On a true circle every m ≥ 1 mode is a
+*pair* at identical frequencies; a rectilinear grid staircases the circle and
+splits them, and that split is the mode beating LACUNA.md describes as the
+pattern precessing on screen. Measured in units of the fundamental, so at a
+220 Hz note the worst pair beats at about 10 Hz on the shipped mesh and about
+2 Hz at R=30. Ten hertz is a buzz, not a precession — which is the real reason
+to want a larger membrane, over and above the cycle-budget argument.
 
 Measured against an ideal circular membrane (ratios computed from Bessel zeros,
 not a hand-typed table):

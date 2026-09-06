@@ -81,9 +81,13 @@ class Lacuna(wiring.Component):
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
-    def __init__(self, n=32, base_loss=13, presets=PRESETS, video=False):
+    def __init__(self, n=32, base_loss=13, presets=PRESETS, video=False,
+                 lanes=1):
         self.n = n
         self.video = video
+        # Cells retired per cycle. See Mesh: one lane costs one cycle a node,
+        # which is 1037 of 1250 at 32x32 and does not fit any larger.
+        self.lanes = lanes
         self.base_loss = base_loss
         self.presets = presets
         # Exposed so a testbench can compare mesh state against the reference
@@ -107,7 +111,8 @@ class Lacuna(wiring.Component):
         m = Module()
 
         m.submodules.mesh = mesh = Mesh(
-            n=self.n, presets=self.presets, video=self.video)
+            n=self.n, presets=self.presets, video=self.video,
+            lanes=self.lanes)
         m.d.comb += [
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),

@@ -83,9 +83,28 @@ class Mesh(wiring.Component):
     """One membrane. Pulse `step` to advance it by one update."""
 
     def __init__(self, n=32, presets=PRESETS, video=False, snapshot=False,
-                 mallet=0):
+                 mallet=0, lanes=1):
         # `mallet` here is the MAXIMUM radius; the live value is an input.
         assert n % 2 == 0
+        # `lanes`: how many cells the scan retires per cycle.
+        #
+        # At one lane the membrane costs one cycle per node, so 32x32 spends
+        # 1037 of the 1250 cycles a 48 kHz sample allows and nothing larger
+        # fits: 48x48 would need 2304 and 64x64 about 4100. More clock does not
+        # reach it either -- 4096 nodes at 48 kHz is a 197 MHz sync domain and
+        # this pipeline closes at 65-68. Retiring several nodes a cycle is the
+        # only way to a bigger membrane at audio rate, and it is the one thing
+        # here a CPU cannot buy at any clock.
+        #
+        # The memory holds `lanes` cells to a word, the delay line shifts by a
+        # whole word, and the update is instantiated once per lane. A power of
+        # two, so a cell address splits into word and lane by slicing rather
+        # than dividing; at least two words to a row, so the E and W spill taps
+        # land on different words from the rows above and below.
+        assert lanes >= 1 and lanes & (lanes - 1) == 0, "lanes must be a power of two"
+        assert n % lanes == 0, f"{lanes} lanes do not divide a {n}-cell row"
+        assert n // lanes >= 2, "need at least two words per row"
+        self.lanes = lanes
         self.n = n
         # `video`: also keep an 8-bit snapshot of the mesh for the display. It
         # costs one BRAM and is written from the scan that already passes every
@@ -170,10 +189,25 @@ class Mesh(wiring.Component):
         cx = cy = n // 2
         AW = Shape.cast(range(cells)).width
 
+        # --- scan width ------------------------------------------------------
+        # L cells to a memory word. WPR words to a row; the delay line spans two
+        # rows plus one word either side of the centre, which is where the E
+        # neighbour of the last lane and the W neighbour of the first come from.
+        L = self.lanes
+        LSH = (L - 1).bit_length()          # cell address -> word, lane
+        WPR = n // L                        # words per row
+        words = cells // L
+        WAW = Shape.cast(range(words)).width
+
+        def lane(word, i):
+            """Cell i of a packed word, signed."""
+            return word[i * WIDTH:(i + 1) * WIDTH].as_signed()
+
         # --- memory banks ----------------------------------------------------
         rds, wrs = [], []
         for k in range(2):
-            mem = Memory(shape=signed(WIDTH), depth=cells, init=[0] * cells)
+            mem = Memory(shape=unsigned(L * WIDTH), depth=words,
+                         init=[0] * words)
             m.submodules[f"bank{k}"] = mem
             rds.append(mem.read_port())
             wrs.append(mem.write_port())
@@ -269,27 +303,53 @@ class Mesh(wiring.Component):
 
         # --- scan ------------------------------------------------------------
         DRAIN = 8
-        j = Signal(range(cells + DRAIN + 1))
-        jx = Signal(range(n))
+        w = Signal(range(words + DRAIN + 1))    # word counter, was the cell one
+        wx = Signal(range(WPR))                 # word within the row
         jy = Signal(range(n))
         scanning = Signal()
 
-        stream_addr = Signal(AW)
-        m.d.comb += stream_addr.eq((j + n)[:AW])
-
-        cur_rd = Signal(signed(WIDTH))
-        old_rd = Signal(signed(WIDTH))
+        # One row ahead, wrapping. The old form was `(j + n)[:AW]`, which is
+        # only the modulo when `cells` is a power of two: true at 32x32 (1024)
+        # and 64x64 (4096), false at 48x48 (2304), where it would have wrapped
+        # to the wrong cell and quietly computed a different membrane.
+        stream_addr = Signal(WAW)
+        ahead = Signal(WAW + 1)
         m.d.comb += [
-            rds[0].addr.eq(Mux(phase, j[:AW], stream_addr)),
-            rds[1].addr.eq(Mux(phase, stream_addr, j[:AW])),
+            ahead.eq(w + WPR),
+            stream_addr.eq(Mux(ahead >= words, ahead - words, ahead)),
+        ]
+
+        cur_rd = Signal(unsigned(L * WIDTH))
+        old_rd = Signal(unsigned(L * WIDTH))
+        m.d.comb += [
+            rds[0].addr.eq(Mux(phase, w[:WAW], stream_addr)),
+            rds[1].addr.eq(Mux(phase, stream_addr, w[:WAW])),
             cur_rd.eq(Mux(phase, rds[1].data, rds[0].data)),
             old_rd.eq(Mux(phase, rds[0].data, rds[1].data)),
         ]
 
-        tap = [Signal(signed(WIDTH), name=f"tap{k}") for k in range(2 * n + 1)]
+        # Word-wise delay line: tap[k] is the word read k cycles ago, so
+        # tap[WPR] is the word being computed, tap[0] the row below and
+        # tap[2*WPR] the row above. The same geometry as before, in words.
+        tap = [Signal(unsigned(L * WIDTH), name=f"tap{k}")
+               for k in range(2 * WPR + 1)]
         m.d.sync += tap[0].eq(cur_rd)
-        for k in range(1, 2 * n + 1):
+        for k in range(1, 2 * WPR + 1):
             m.d.sync += tap[k].eq(tap[k - 1])
+
+        def taps_for(i):
+            """centre, N, S, E, W for lane i.
+
+            At one lane these are tap[n], tap[2n], tap[0], tap[n-1], tap[n+1],
+            exactly as before. With more, E of the last lane and W of the first
+            spill into the adjacent words, one tap either side of the centre.
+            """
+            centre = lane(tap[WPR], i)
+            north = lane(tap[2 * WPR], i)
+            south = lane(tap[0], i)
+            east = lane(tap[WPR], i + 1) if i < L - 1 else lane(tap[WPR - 1], 0)
+            west = lane(tap[WPR], i - 1) if i > 0 else lane(tap[WPR + 1], L - 1)
+            return centre, north, south, east, west
 
         # Node offset and its squared radius. Registering these splits the one
         # path that was left combinational from the scan counters all the way
@@ -297,31 +357,38 @@ class Mesh(wiring.Component):
         # the video logic was sharing the die, left the sync domain with almost
         # no margin. `inside` therefore describes the node one cycle later, so
         # its delay chain below is one shorter to keep the alignment identical.
-        dx_c = Signal(signed(8))
+        # dy is common to every lane -- they are all on the same row -- so only
+        # dx, the squared radius and the mask replicate.
         dy_c = Signal(signed(8))
-        dx = Signal(signed(8))
         dy = Signal(signed(8))
-        d2 = Signal(unsigned(16))
-        m.d.comb += [dx_c.eq(jx - cx), dy_c.eq(jy - cy)]
-        m.d.sync += [dx.eq(dx_c), dy.eq(dy_c),
-                     d2.eq(dx_c * dx_c + dy_c * dy_c)]
+        m.d.comb += dy_c.eq(jy - cy)
+        m.d.sync += dy.eq(dy_c)
 
-        inside = Signal()
-        in_square = Signal()
-        in_slit = Signal()
-        m.d.comb += [
-            in_square.eq((dx < g_inner.as_signed()) & (dx > -g_inner.as_signed())
-                         & (dy < g_inner.as_signed()) & (dy > -g_inner.as_signed())),
-            in_slit.eq((dy < 2) & (dy > -2) & (dx > 0)),
-            inside.eq((d2 <= outer2)
+        dx_c = [Signal(signed(8), name=f"dx_c{i}") for i in range(L)]
+        dx = [Signal(signed(8), name=f"dx{i}") for i in range(L)]
+        d2 = [Signal(unsigned(16), name=f"d2_{i}") for i in range(L)]
+        inside = [Signal(name=f"inside{i}") for i in range(L)]
+        for i in range(L):
+            m.d.comb += dx_c[i].eq(wx * L + i - cx)
+            m.d.sync += [dx[i].eq(dx_c[i]),
+                         d2[i].eq(dx_c[i] * dx_c[i] + dy_c * dy_c)]
+
+        for i in range(L):
+            in_square = Signal(name=f"in_square{i}")
+            in_slit = Signal(name=f"in_slit{i}")
+            m.d.comb += [
+                in_square.eq((dx[i] < g_inner.as_signed()) & (dx[i] > -g_inner.as_signed())
+                             & (dy < g_inner.as_signed()) & (dy > -g_inner.as_signed())),
+                in_slit.eq((dy < 2) & (dy > -2) & (dx[i] > 0)),
+                inside[i].eq((d2[i] <= outer2)
                       # inner == 0 means a solid head. Without the guard the
                       # test is d2 > 0, which punches a one-cell hole through
                       # dead centre -- exactly the fundamental's antinode, and
                       # enough to pull a full disc nearly three semitones sharp
                       # and wreck its mode ratios.
-                      & Mux(g_square, ~in_square, g_nohole | (d2 > inner2))
+                      & Mux(g_square, ~in_square, g_nohole | (d2[i] > inner2))
                       & ~(g_slit & in_slit)),
-        ]
+            ]
 
         # The strike sits at -x and the pickup at +y. -x rather than +x because
         # the slit preset removes |dy| < 2 for dx > 0, which is exactly where a
@@ -382,81 +449,91 @@ class Mesh(wiring.Component):
         # the node offset equals the strike offset, which is the same node.
         M = self.mallet
         MSQ = Array([C(v * v, unsigned(10)) for v in range(M + 2)])
-        sdx = Signal(signed(9))
         sdy = Signal(signed(9))
-        adx = Signal(range(M + 2))
         ady = Signal(range(M + 2))
         strike_pending = Signal()
-        strike_hit = Signal()
+        strike_hit = [Signal(name=f"strike_hit{i}") for i in range(L)]
         # adx/ady are registered: node offset -> add -> abs -> clamp -> square
         # lookup -> compare in one cycle left the sync domain at 60.6 MHz once
         # ORBITA's scan shared the die. That puts the test a further stage on,
         # so the delay chain below is one shorter again.
-        m.d.comb += [
-            sdx.eq(dx + strike_r),
-            sdy.eq(dy),
-        ]
-        m.d.sync += [
-            adx.eq(Mux(abs(sdx) > M, M + 1, abs(sdx))),
-            ady.eq(Mux(abs(sdy) > M, M + 1, abs(sdy))),
-        ]
+        m.d.comb += sdy.eq(dy)
+        m.d.sync += ady.eq(Mux(abs(sdy) > M, M + 1, abs(sdy)))
         msq = Signal(range((M + 2) * (M + 2)))
         m.d.sync += msq.eq(self.mallet_r * self.mallet_r)
-        m.d.comb += strike_hit.eq(strike_pending
-                                  & (MSQ[adx] + MSQ[ady] <= msq))
+        for i in range(L):
+            sdx = Signal(signed(9), name=f"sdx{i}")
+            adx = Signal(range(M + 2), name=f"adx{i}")
+            m.d.comb += sdx.eq(dx[i] + strike_r)
+            m.d.sync += adx.eq(Mux(abs(sdx) > M, M + 1, abs(sdx)))
+            m.d.comb += strike_hit[i].eq(strike_pending
+                                         & (MSQ[adx] + MSQ[ady] <= msq))
         with m.If(self.strike):
             m.d.sync += strike_pending.eq(1)
 
-        sum_r = Signal(signed(WIDTH + 3))
-        cen_r = Signal(signed(WIDTH))
-        m.d.sync += [
-            sum_r.eq(tap[0] + tap[n - 1] + tap[n + 1] + tap[2 * n]),
-            cen_r.eq(tap[n]),
-        ]
-
-        lap_r = Signal(signed(WIDTH + 3))
-        cen2 = Signal(signed(WIDTH))
-        m.d.sync += [lap_r.eq(sum_r - (cen_r << 2)), cen2.eq(cen_r)]
-
-        prod_r = Signal(signed(WIDTH + 3 + LAM_FRAC))
-        cen3 = Signal(signed(WIDTH))
-        m.d.sync += [prod_r.eq(lap_r * self.lam2), cen3.eq(cen2)]
-
-        old_al = delay(old_rd, 4, "old")
-        msk_al = delay(inside, 4, "msk")
-        strk_al = delay(strike_hit, 3, "strk")
-        val_al = delay(scanning & (j < cells), 5, "val")
-
-        base = Signal(signed(WIDTH + 4))
-        nxt = Signal(signed(WIDTH + 4))
-        m.d.comb += [
-            base.eq((prod_r >> LAM_FRAC) + (cen3 << 1) - old_al),
-            nxt.eq(base - (base >> self.loss_shift)
-                   + Mux(strk_al, self.strike_amp, 0)),
-        ]
+        val_al = delay(scanning & (w < words), 5, "val")
 
         # Saturate rather than truncate: wrapping a node turns a loud hit into a
         # full-scale sign flip that the mesh then propagates.
         HI, LO = (1 << (WIDTH - 1)) - 1, -(1 << (WIDTH - 1))
-        clamped = Signal(signed(WIDTH))
-        with m.If(nxt > HI):
-            m.d.comb += clamped.eq(HI)
-        with m.Elif(nxt < LO):
-            m.d.comb += clamped.eq(LO)
-        with m.Else():
-            m.d.comb += clamped.eq(nxt)
 
-        written = Signal(signed(WIDTH))
+        written = [Signal(signed(WIDTH), name=f"written{i}") for i in range(L)]
+        msk_w = [Signal(name=f"msk_w{i}") for i in range(L)]
         wr_valid = Signal()
-        msk_w = Signal()
-        m.d.sync += [written.eq(Mux(msk_al, clamped, 0)), wr_valid.eq(val_al),
-                     msk_w.eq(msk_al)]
-        wr_addr = delay(j[:AW], 6, "jw")
+
+        # One update per lane. Everything above this point that differs between
+        # lanes -- the taps, the mask, the strike test -- is already indexed;
+        # the tension, the loss and the clamp bounds are shared.
+        for i in range(L):
+            centre, north, south, east, west = taps_for(i)
+
+            sum_r = Signal(signed(WIDTH + 3), name=f"sum_r{i}")
+            cen_r = Signal(signed(WIDTH), name=f"cen_r{i}")
+            m.d.sync += [
+                sum_r.eq(south + east + west + north),
+                cen_r.eq(centre),
+            ]
+
+            lap_r = Signal(signed(WIDTH + 3), name=f"lap_r{i}")
+            cen2 = Signal(signed(WIDTH), name=f"cen2_{i}")
+            m.d.sync += [lap_r.eq(sum_r - (cen_r << 2)), cen2.eq(cen_r)]
+
+            prod_r = Signal(signed(WIDTH + 3 + LAM_FRAC), name=f"prod_r{i}")
+            cen3 = Signal(signed(WIDTH), name=f"cen3_{i}")
+            m.d.sync += [prod_r.eq(lap_r * self.lam2), cen3.eq(cen2)]
+
+            old_in = Signal(signed(WIDTH), name=f"old_in{i}")
+            m.d.comb += old_in.eq(lane(old_rd, i))
+            old_al = delay(old_in, 4, f"old{i}")
+            msk_al = delay(inside[i], 4, f"msk{i}")
+            strk_al = delay(strike_hit[i], 3, f"strk{i}")
+
+            base = Signal(signed(WIDTH + 4), name=f"base{i}")
+            nxt = Signal(signed(WIDTH + 4), name=f"nxt{i}")
+            m.d.comb += [
+                base.eq((prod_r >> LAM_FRAC) + (cen3 << 1) - old_al),
+                nxt.eq(base - (base >> self.loss_shift)
+                       + Mux(strk_al, self.strike_amp, 0)),
+            ]
+
+            clamped = Signal(signed(WIDTH), name=f"clamped{i}")
+            with m.If(nxt > HI):
+                m.d.comb += clamped.eq(HI)
+            with m.Elif(nxt < LO):
+                m.d.comb += clamped.eq(LO)
+            with m.Else():
+                m.d.comb += clamped.eq(nxt)
+
+            m.d.sync += [written[i].eq(Mux(msk_al, clamped, 0)),
+                         msk_w[i].eq(msk_al)]
+
+        m.d.sync += wr_valid.eq(val_al)
+        wr_addr = delay(w[:WAW], 6, "jw")
 
         for k in range(2):
             m.d.comb += [
                 wrs[k].addr.eq(wr_addr),
-                wrs[k].data.eq(written),
+                wrs[k].data.eq(Cat(*written)),
                 wrs[k].en.eq(wr_valid & (phase == (0 if k == 1 else 1))),
             ]
 
@@ -478,30 +555,44 @@ class Mesh(wiring.Component):
         if self.video:
             DISP_SHIFT = 13
             m.submodules.disp = disp = Memory(
-                shape=unsigned(8), depth=cells, init=[0] * cells)
+                shape=unsigned(8 * L), depth=words, init=[0] * words)
             disp_wr = disp.write_port()
-            lvl = Signal(signed(WIDTH))
-            disp_val = Signal(unsigned(8))
-            m.d.comb += lvl.eq(written >> DISP_SHIFT)
-            with m.If(~msk_w):
-                m.d.comb += disp_val.eq(0)          # outside the membrane
-            with m.Elif(lvl > 127):
-                m.d.comb += disp_val.eq(255)
-            with m.Elif(lvl < -127):
-                m.d.comb += disp_val.eq(1)
-            with m.Else():
-                # in-membrane values live in 1..255, so they never read as 0
-                m.d.comb += disp_val.eq(Mux(lvl + 128 == 0, 1, (lvl + 128)[:8]))
+            disp_vals = []
+            for i in range(L):
+                lvl = Signal(signed(WIDTH), name=f"lvl{i}")
+                disp_val = Signal(unsigned(8), name=f"disp_val{i}")
+                m.d.comb += lvl.eq(written[i] >> DISP_SHIFT)
+                with m.If(~msk_w[i]):
+                    m.d.comb += disp_val.eq(0)      # outside the membrane
+                with m.Elif(lvl > 127):
+                    m.d.comb += disp_val.eq(255)
+                with m.Elif(lvl < -127):
+                    m.d.comb += disp_val.eq(1)
+                with m.Else():
+                    # in-membrane values live in 1..255, never reading as 0
+                    m.d.comb += disp_val.eq(
+                        Mux(lvl + 128 == 0, 1, (lvl + 128)[:8]))
+                disp_vals.append(disp_val)
             m.d.comb += [
                 disp_wr.addr.eq(wr_addr),
-                disp_wr.data.eq(disp_val),
+                disp_wr.data.eq(Cat(*disp_vals)),
                 disp_wr.en.eq(wr_valid),
             ]
             disp_rd = disp.read_port(domain="dvi")
-            m.d.comb += [
-                disp_rd.addr.eq(self.disp_addr),
-                self.disp_data.eq(disp_rd.data),
-            ]
+            if L == 1:
+                m.d.comb += [
+                    disp_rd.addr.eq(self.disp_addr),
+                    self.disp_data.eq(disp_rd.data),
+                ]
+            else:
+                # The read is synchronous, so the lane select has to arrive with
+                # the data rather than with the address.
+                dsel = Signal(LSH)
+                m.d.dvi += dsel.eq(self.disp_addr[:LSH])
+                m.d.comb += [
+                    disp_rd.addr.eq(self.disp_addr[LSH:]),
+                    self.disp_data.eq(disp_rd.data.word_select(dsel, 8)),
+                ]
 
         # --- wide snapshot ------------------------------------------------
         # The same free copy as the display tap, but 16 bits and read from the
@@ -511,43 +602,61 @@ class Mesh(wiring.Component):
         # the rim reads silence, which is the behaviour we want.
         if self.snapshot:
             m.submodules.snap = snap = Memory(
-                shape=signed(16), depth=cells, init=[0] * cells)
+                shape=unsigned(16 * L), depth=words, init=[0] * words)
             snap_wr = snap.write_port()
             m.d.comb += [
                 snap_wr.addr.eq(wr_addr),
-                snap_wr.data.eq(written >> (WIDTH - 16)),
+                snap_wr.data.eq(Cat(*[(written[i] >> (WIDTH - 16))[:16]
+                                      for i in range(L)])),
                 snap_wr.en.eq(wr_valid),
             ]
             snap_rd = snap.read_port()
-            m.d.comb += [
-                snap_rd.addr.eq(self.snap_addr),
-                self.snap_data.eq(snap_rd.data),
-            ]
+            if L == 1:
+                m.d.comb += [
+                    snap_rd.addr.eq(self.snap_addr),
+                    self.snap_data.eq(snap_rd.data.as_signed()),
+                ]
+            else:
+                ssel = Signal(LSH)
+                m.d.sync += ssel.eq(self.snap_addr[:LSH])
+                m.d.comb += [
+                    snap_rd.addr.eq(self.snap_addr[LSH:]),
+                    self.snap_data.eq(
+                        snap_rd.data.word_select(ssel, 16).as_signed()),
+                ]
 
         m.d.comb += [self.strike_at.eq(strike_node),
                      self.pickup_at.eq(pickup_node),
                      self.pickup2_at.eq(pickup2_node)]
 
-        with m.If(wr_valid & (wr_addr == pickup_node)):
-            m.d.sync += self.pickup.eq(written)
-        with m.If(wr_valid & (wr_addr == pickup2_node)):
-            m.d.sync += self.pickup2.eq(written)
+        # The pickups are cell addresses and the scan now writes L cells to one
+        # word, so match the word and select the lane.
+        def at_node(node, i):
+            if L == 1:
+                return wr_addr == node
+            return (wr_addr == node[LSH:]) & (node[:LSH] == i)
+
+        for i in range(L):
+            with m.If(wr_valid & at_node(pickup_node, i)):
+                m.d.sync += self.pickup.eq(written[i])
+            with m.If(wr_valid & at_node(pickup2_node, i)):
+                m.d.sync += self.pickup2.eq(written[i])
 
         # --- run control -----------------------------------------------------
         with m.FSM():
             with m.State("IDLE"):
                 with m.If(self.step):
-                    m.d.sync += [j.eq(0), jx.eq(0), jy.eq(0)]
+                    m.d.sync += [w.eq(0), wx.eq(0), jy.eq(0)]
                     m.next = "SCAN"
 
             with m.State("SCAN"):
                 m.d.comb += [scanning.eq(1), self.running.eq(1)]
-                m.d.sync += j.eq(j + 1)
-                with m.If(jx == n - 1):
-                    m.d.sync += [jx.eq(0), jy.eq(jy + 1)]
+                m.d.sync += w.eq(w + 1)
+                with m.If(wx == WPR - 1):
+                    m.d.sync += [wx.eq(0), jy.eq(jy + 1)]
                 with m.Else():
-                    m.d.sync += jx.eq(jx + 1)
-                with m.If(j == cells + DRAIN):
+                    m.d.sync += wx.eq(wx + 1)
+                with m.If(w == words + DRAIN):
                     m.d.sync += [phase.eq(~phase), strike_pending.eq(0)]
                     m.d.comb += self.done.eq(1)
                     m.next = "IDLE"
