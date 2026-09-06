@@ -6,7 +6,7 @@
 #
 # The membrane itself lives in mesh.py, shared with ORBITA. This file is what
 # makes it an instrument you strike and listen to: the CV mapping, the pitch
-# table, the encoder, and two pickup nodes a quarter turn apart for the
+# table, the encoder, and two pickup nodes 45 degrees apart for the
 # stereo output.
 #
 #     in0  strike     rising edge above ~1 V
@@ -14,7 +14,7 @@
 #     in2  position   strike position, hub to rim
 #     in3  geometry   audio-rate modulation of the hole radius
 #     out0 mesh L     pickup on the +y axis
-#     out1 mesh R     a quarter turn round at the same radius
+#     out1 mesh R     45 degrees round at the same radius
 #     encoder short press cycles the preset (a 3 s hold still reboots)
 #
 # TUNING is exact rather than calibrated. For a mode whose discrete-Laplacian

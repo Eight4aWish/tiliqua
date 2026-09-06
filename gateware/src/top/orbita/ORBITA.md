@@ -46,8 +46,17 @@ on every waveform. A circle has no seam.
 
 It is also exactly the Daisy engine's ring, except each point is coupled
 *radially* into a membrane as well as to its neighbours, so energy leaves the
-scan path and comes back. That coupling is the entire argument for doing this on
-an FPGA rather than on the Daisy that already does the 1D version.
+scan path and comes back. That coupling is what makes it a different instrument
+from the 1D version.
+
+**It is not an argument for needing an FPGA, and this was claimed here before.**
+The membrane updates once every 64 samples: 1024 nodes at roughly a dozen
+cycles each, spread over 64 samples, is about 190 cycles of the 10,000 an
+STM32H7 has per sample. The scan adds ~30. ORBITA's arithmetic would fit on the
+Daisy next door with 97% of its budget spare, and the 1D ancestor is proof the
+platform is willing. What gateware buys *here* is the free display and living
+in the same file as LACUNA — not throughput. The throughput argument belongs to
+LACUNA at 48 kHz, and only above 32×32; see LACUNA.md's "Where it goes next".
 
 At radius 10 the circumference is about 63 cells, so 64 points is close to one
 per cell — the same table length as the Daisy ring, and not a coincidence.

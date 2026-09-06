@@ -183,7 +183,7 @@ class LacunaTop(Elaboratable):
             # Amber: the left output, on the +y axis.
             m.d.comb += [r.eq(190), g.eq(120), b.eq(0)]
         with m.Elif(on_mesh_q & at_pickup2):
-            # Pale amber: the right output, a quarter turn round at the same
+            # Pale amber: the right output, 45 degrees round at the same
             # radius. Same family as the left so they read as a pair.
             m.d.comb += [r.eq(255), g.eq(205), b.eq(90)]
         with m.Elif(~on_mesh_q):

@@ -20,10 +20,9 @@ is driven.
 | in2 | strike position | scan radius |
 | in3 | geometry — the hole | geometry — the hole |
 | out0 | mesh L | scan L |
-| out1 | mesh R — a quarter turn round | scan R — a wider circle |
+| out1 | mesh R — 45° round | scan R — a wider circle |
 
-Both are stereo. LACUNA takes two pickups a quarter turn apart on the
-membrane;
+Both are stereo. LACUNA takes two pickups 45° apart on the membrane;
 ORBITA scans two circles at different radii. That is
 real decorrelation rather than a widener: measured L/R correlation runs 0.50 on
 the solid heads and near zero on the ring geometries, because angular modes
@@ -42,9 +41,14 @@ parameter at best. Here it is two comparisons re-evaluated for every node of
 every scan, which means the geometry of the instrument can change every single
 sample — and the hole becomes a modulation destination rather than a setting.
 
-That is the one thing about this that a CPU module in the same rack cannot
-follow: an H7 has no video output either, and no way to put audio and pixels in
-the same clock domain.
+State that as cost rather than impossibility, though: a CPU can run the same two
+comparisons inline instead of rebuilding an array, so audio-rate geometry is expensive
+there, not unavailable. What a CPU cannot buy at any clock is **scale** — a 64×64
+membrane at 48 kHz needs more than one node retired per cycle, and 4–7× an STM32H7's
+entire per-sample budget. See LACUNA.md, "Where it goes next".
+
+The display is the other real difference, and it is also a cost argument: here it is
+written straight from the audio scan and takes no cycles at all.
 
 ORBITA takes the same idea into scanned synthesis. A concentric scan circle
 never crosses a concentric hole, so the *asymmetric* geometries are the

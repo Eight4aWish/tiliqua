@@ -337,9 +337,11 @@ class Mesh(wiring.Component):
         pickup_node = Signal(AW)
         pickup2_node = Signal(AW)
         # 181/256 is 1/sqrt(2) to within a thousandth: the second pickup sits at
-        # the same radius as the first, a quarter turn round. Verified inside
-        # the membrane and clear of both the slit and the square hole on all
-        # eight presets.
+        # the same radius as the first, 45 degrees round -- (cx + r/sqrt2,
+        # cy + r/sqrt2) against the first's (cx, cy + r). NOT a quarter turn:
+        # 90 degrees from +y lands on +x or -x, and the paragraph below rules
+        # out both. Verified inside the membrane and clear of both the slit and
+        # the square hole on all eight presets.
         #
         # The thin ring looks unbalanced over a short simulation -- 1% of the
         # first pickup at 500 samples -- but that is the wave not having arrived

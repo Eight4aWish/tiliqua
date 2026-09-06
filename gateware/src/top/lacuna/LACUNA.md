@@ -16,7 +16,7 @@ pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
 | in2 | position — strike position, hub to rim |
 | in3 | geometry — audio-rate modulation of the hole radius |
 | out0 | mesh L — pickup on the +y axis |
-| out1 | mesh R — a quarter turn round, same radius |
+| out1 | mesh R — 45° round, same radius |
 | GPDI | the membrane, drawn live |
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
@@ -24,18 +24,23 @@ Eight presets: three solid drum heads (r14, r10, r7), then narrow hole, wide
 ring, thin ring, square hole, slit ring.
 
 The membrane itself lives in [`mesh.py`](mesh.py), shared with
-[ORBITA](../orbita/ORBITA.md), which drives the same mesh a thousand times
-slower and reads a circle through it as a wavetable.
+[ORBITA](../orbita/ORBITA.md), which updates the same mesh once every 64
+samples instead of every one, and reads a circle through it as a wavetable.
 
 ## Why gateware
 
-The boundary is a comparator, not an array. On a CPU the mask is 1024 elements
-you rebuild when the shape changes, so shape is a control-rate parameter at
-best; here it can change every sample, which makes geometry a modulation
-destination. That is what in3 is for, and it is the one thing about this module
-that cannot be done on the CPU-based modules in the same rack.
+The boundary is a comparator, not an array. Precomputed as 1024 elements the
+shape is a control-rate parameter at best; evaluated as two comparisons in the
+same cycle as the arithmetic it can change every sample, which is what makes
+geometry a modulation destination and what in3 is for.
 
 Measured: a preset change takes effect on the sample the CV arrives, 20.8 µs.
+
+**Do not overstate this.** A CPU can evaluate the same two comparisons inline
+rather than rebuilding an array, so audio-rate geometry is a cost there, not an
+impossibility — roughly 20% on top of a per-node stencil that is already close
+to the whole budget at this mesh size. The categorical argument for gateware
+here is *scale*, not geometry; see "Where it goes next".
 
 ## Cost
 
@@ -72,7 +77,8 @@ every preset.
 
 ## Stereo
 
-Two pickups, the second a quarter turn round at the same radius. That placement
+Two pickups, the second 45° round at the same radius — `(cx + r/√2, cy + r/√2)`
+against the first's `(cx, cy + r)`. That placement
 is not arbitrary — the two obvious alternatives are both wrong. A **mirrored**
 point reads *identically* on every symmetric preset: measured correlation 1.00,
 which is mono with extra steps. **+x** sits inside the slit on the slit preset
@@ -182,4 +188,17 @@ a full device crash.
 
 - **A feedback path.** Injecting the module's own output per sample would make
   the surface part of a patch rather than an endpoint.
-- **A larger mesh**, for more distinct modes in the audio band.
+- **A larger mesh**, for more distinct modes in the audio band — but *not on
+  this scan*. The mesh retires one node per cycle, and 32×32 already spends
+  1037 of the 1250 cycles a 48 kHz sample allows. 64×64 needs about 4100 and
+  does not fit; more clock will not reach it either, since 4096 nodes at 48 kHz
+  is a 197 MHz sync domain and this pipeline closes at 65–68.
+
+  A bigger membrane at audio rate therefore means retiring **more than one node
+  per cycle** — four cells to a memory word, the delay line shifting by a word,
+  four lanes of the update. That is the one thing here a CPU cannot buy at any
+  clock: 64×64 at 48 kHz needs 4–7× an STM32H7's entire per-sample budget, at
+  every plausible instructions-per-node estimate.
+
+  **ORBITA has no such limit.** At one update every 64 samples it has ~80,000
+  cycles to spend, so 64×64 fits on the existing serial scan unchanged.
