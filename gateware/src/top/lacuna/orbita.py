@@ -203,7 +203,7 @@ class Orbita(wiring.Component):
 
     bitstream_help = BitstreamHelp(
         brief="Orbita: the membrane scanned as a wavetable",
-        io_left=['drive', 'pitch', 'radius', 'geometry',
+        io_left=['drive', 'pitch', 'radius', 'damping',
                  'scan L', 'scan R', '', ''],
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
@@ -248,13 +248,20 @@ class Orbita(wiring.Component):
         n = self.n
         cx = cy = n // 2
 
+        # in3 sets how long the membrane holds its shape. Clamped either side:
+        # below 7 a note is a thud, above 14 it never decays at all.
+        loss_cv = Signal(signed(8))
+        loss_shift = Signal(range(24))
+        m.d.comb += loss_shift.eq(Mux(loss_cv < 7, 7,
+                                      Mux(loss_cv > 14, 14, loss_cv)))
+
         m.submodules.mesh = mesh = Mesh(
             n=n, presets=self.presets, video=self.video, snapshot=True,
             mallet=MALLET_MAX)
         m.d.comb += [
             mesh.disp_addr.eq(self.disp_addr),
             self.disp_data.eq(mesh.disp_data),
-            mesh.loss_shift.eq(LOSS_SHIFT),
+            mesh.loss_shift.eq(loss_shift),
         ]
 
         m.submodules.nco_mem = nco_mem = Memory(
@@ -504,7 +511,22 @@ class Orbita(wiring.Component):
                         # CV gets 256 steps across the membrane instead of 16.
                         radius_cv.eq(Mux(pos < 0, 0,
                                       Mux(pos > 16383, 255, pos[6:14]))),
-                        mesh.fm.eq(_raw(self.i.payload[3])),
+                        # in3 was the hole radius. On a concentric scan circle a
+                        # concentric hole is never crossed, so it did nothing at
+                        # all on five of the eight presets -- it only bit on the
+                        # slit and the square. Damping is the axis this instrument
+                        # was actually short of: how long the surface holds its
+                        # shape is how alive a held note is, and it is the control
+                        # scanned synthesis has had since Verplank. The hole is
+                        # still there, chosen with the preset.
+                        #
+                        # Rounded like the old fm mapping, so an idle jack reading
+                        # a count or two below zero does not knock it a whole shift
+                        # down. Roughly 1.25 V per step, from 7 (a quick thud) to
+                        # 14 (very nearly forever), with 0 V on the 10 it has
+                        # always been.
+                        loss_cv.eq(LOSS_SHIFT
+                                   + ((_raw(self.i.payload[3]) + (1 << 11)) >> 12)),
                     ]
                     m.d.sync += pitch_q.eq(pitch)
                     m.next = "IDX"

@@ -87,7 +87,7 @@ class Lacuna(wiring.Component):
         io_right=['preset', '', 'video (fixed)', '', '', '']
     )
 
-    def __init__(self, n=32, base_loss=13, presets=None, video=False,
+    def __init__(self, n=32, base_loss=None, presets=None, video=False,
                  lanes=1, f_lo=None):
         self.n = n
         self.video = video
@@ -99,10 +99,26 @@ class Lacuna(wiring.Component):
                 f"research/mesh/presets.py and add it to mesh.py")
             presets = PRESETS_BY_N[n]
         self.f_lo = f_lo if f_lo is not None else F_LO_BY_N.get(n, F_LO)
+        # Damping follows the pitch range, rather than being a constant that has
+        # to be remembered whenever the range moves.
+        #
+        # loss_shift is a per-SAMPLE decay, so its time constant is fixed in
+        # seconds while a note's period is not: halve the pitch and the same
+        # shift kills the mode in half as many cycles. The per-octave tracking
+        # below handles that *within* a range. What it cannot see is the range
+        # itself moving, and at 48x48 it moved a whole octave down -- 55 Hz to
+        # 27.5 -- because the wider membrane's stability ceiling fell from 906 Hz
+        # to 582. Left at 13 the bottom of the new range rang for half as many
+        # cycles as the bottom of the old one, which reads as the instrument
+        # having gone flat and lifeless rather than as a damping error.
+        #
+        # 13 was tuned by ear at 55 Hz. One shift per octave of range movement
+        # holds the cycles-per-note constant from there.
+        self.base_loss = (base_loss if base_loss is not None
+                          else round(13 + math.log2(55.0 / self.f_lo)))
         # Cells retired per cycle. See Mesh: one lane costs one cycle a node,
         # which is 1037 of 1250 at 32x32 and does not fit any larger.
         self.lanes = lanes
-        self.base_loss = base_loss
         self.presets = presets
         # Exposed so a testbench can compare mesh state against the reference
         # without going through the output scaling.
