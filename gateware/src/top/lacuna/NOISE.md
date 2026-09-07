@@ -75,6 +75,39 @@ ROM widened from 16 bits to 32 so cos and sin get 16 each.
 **It does not explain the novelty**: it degrades only 2–3 dB between the two
 grid sizes, and the symptom is described as new rather than slightly worse.
 
+## The strongest lead, found last
+
+**The design is marginal at 60 MHz since damping became a CV, and the static
+arrived with that build.**
+
+Trying to build ORBITA at 32x32 for an A/B, all five seeds failed `sync`:
+55.9, 57.0, 58.0, 58.0, 59.3 MHz against 60.00. Consistent across seeds, so it
+is structural rather than placement luck -- and this is the *smaller* design.
+The 48x48 build currently flashed passed at 60.59, which is 1% margin, and now
+looks like the lucky seed rather than a healthy one.
+
+The timeline fits:
+
+| build | reported |
+| --- | --- |
+| addrfix, constant `LOSS_SHIFT` | circle and sound agree; lost some natural reverb. **No static** |
+| damping on in3 | reverb-free richness back, **and static** |
+
+A sync domain intermittently missing timing produces wrong arithmetic now and
+then, which sounds like static, has no dependence on scan position, and does
+not care what the damping CV is set to. That satisfies every constraint the
+signal-path hypotheses could not: whole range, damping-independent, new.
+
+**Test first, before anything else:** rebuild 48x48 with `LOSS_SHIFT` back to a
+compile-time constant. It closed at 63-65 MHz before the CV existed. If the
+static goes, it was timing all along, and the damping control has to be bought
+back another way -- a pipeline stage in the update, fewer shift values, or the
+encoder rather than a jack.
+
+Every hypothesis above assumed the arithmetic was correct and hunted for a
+signal-path cause. None of them considered that the arithmetic might simply be
+wrong.
+
 ## Two warnings for whoever picks this up
 
 **Beware the metric.** Two measurements in this investigation gave confident
