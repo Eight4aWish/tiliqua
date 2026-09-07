@@ -56,6 +56,9 @@ from amaranth.lib.wiring import In, Out
 # fractional bits that dead zone sits at -24 dBFS, freezing the tail at a DC
 # offset.
 WIDTH, FRAC = 24, 22
+# Range of the per-sample decay shift. Eight values, so the shift is a mux
+# over constants rather than a barrel shifter. LACUNA uses 13-14, ORBITA 7-14.
+LOSS_MIN, LOSS_MAX = 7, 14
 LAM_FRAC = 26                # lam2 fixed-point
 
 # (outer, inner, square_hole, slit, inv_mu_q). The inv_mu values are the
@@ -164,7 +167,13 @@ class Mesh(wiring.Component):
             "done":       Out(1),     # pulse: that update has finished
             # --- how the membrane behaves ---
             "lam2":       In(LAM_FRAC),
-            "loss_shift": In(range(24)),
+            # Held to 7..14. A shift by a Signal is a barrel shifter -- 24
+            # possible amounts on a 28-bit value, in the middle of the per-node
+            # arithmetic -- and it cost ORBITA 6 MHz of a domain that had none
+            # spare when in3 became a damping control. Bounded to eight values
+            # it is a mux over eight constant shifts instead, and a constant
+            # shift is free wiring.
+            "loss_shift": In(range(LOSS_MIN, LOSS_MAX + 1)),
             "preset_i":   In(range(len(presets))),
             "fm":         In(signed(16)),   # live hole-radius modulation
             # --- excitation ---
@@ -495,6 +504,13 @@ class Mesh(wiring.Component):
         with m.If(self.strike):
             m.d.sync += strike_pending.eq(1)
 
+        # One constant shift per allowed amount, selected by a mux. Yosys turns
+        # each `>> k` into wiring; only the select costs anything.
+        #
+        def decay(v):
+            return Array([v >> k for k in range(LOSS_MIN, LOSS_MAX + 1)]
+                         )[self.loss_shift - LOSS_MIN]
+
         val_al = delay(scanning & (w < words), 5, "val")
 
         # Saturate rather than truncate: wrapping a node turns a loud hit into a
@@ -536,7 +552,7 @@ class Mesh(wiring.Component):
             nxt = Signal(signed(WIDTH + 4), name=f"nxt{i}")
             m.d.comb += [
                 base.eq((prod_r >> LAM_FRAC) + (cen3 << 1) - old_al),
-                nxt.eq(base - (base >> self.loss_shift)
+                nxt.eq(base - decay(base)
                        + Mux(strk_al, self.strike_amp, 0)),
             ]
 

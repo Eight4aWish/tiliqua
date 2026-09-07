@@ -1,0 +1,97 @@
+# ORBITA at 48×48 — the noise, and what it is not
+
+An open investigation, written down so the next session does not repeat it.
+**Six hypotheses were tested and five are dead.** The measurements are in this
+file; re-deriving them costs a day.
+
+## The symptom
+
+Reported by ear, 7 September, on ORBITA 48×48 with damping on in3:
+
+- A broadband noise floor about 25 dB below the partials — audible as static
+- **Across the whole range of in2**, not only at the extremes
+- **Independent of damping** — "100% sure"
+- Rare or absent on the 32×32 instrument, and there possibly associated with
+  moving the centre hole
+
+Measured from a Retrospective capture of the direct outputs (ch12/13 — the pair
+measuring +0.05 correlation, which is ORBITA's signature; ch6/7 at +0.71 is the
+stereo mix bus and shows the same floor, so the noise is not the recording
+chain):
+
+| band | partials | floor under them | separation |
+| --- | --- | --- | --- |
+| 80–300 Hz | 0.0 dB | −24.7 | **24.7 dB** |
+| 300 Hz–1 kHz | −2.0 | −26.5 | 24.5 dB |
+| 1–3 kHz | −8.8 | −29.5 | 20.7 dB |
+| 3–8 kHz | −20.3 | −35.0 | 14.7 dB |
+
+Also worth knowing: **there is no tonal content above about 2–3 kHz.** Mean and
+median spectra converge there. The move from 64 to 128 scan points was made to
+push the table's folding limit from ~2 kHz to ~4 kHz, and the spectrum says
+there was nothing up there to fold. That change appears to have bought nothing.
+
+## Dead — do not re-test
+
+| hypothesis | how it died |
+| --- | --- |
+| Drive accumulation with damping | The noise is damping-independent by ear. The mechanism requires it to scale with `LOSS_SHIFT` |
+| Mallet too small for the bigger membrane | 48×48 measures **smoother** than 32×32 at the same mallet — 93.2% neighbour agreement against 86.7%. Larger mallets (4, 5, 6) buy nothing: 92.7–93.2% |
+| Output clipping | 3 isolated samples ≥0.99 in 60 s, longest run **1 sample**, all at one instant. 39 samples of 2.6M exceed half scale |
+| Internal membrane saturation | Simulated with ORBITA's drone path at a 5 V gate: peak node 12–30% of full scale, **zero clamp events**, at both sizes and at `LOSS_SHIFT` 10 and 14 |
+| 64 → 128 scan points | Measured identical roughness pickup at both counts, every radius, both sizes |
+
+## Real, but does not fit the symptom
+
+**Boundary grazing.** The mask is hard — a cell is in the membrane or it is
+zero — and a scan one cell from a boundary has its bilinear footprint straddle
+that step. Measured against the same field with no mask:
+
+| grid | at one cell of clearance | at two cells |
+| --- | --- | --- |
+| 32×32 | artifact 42.6 dB below signal | clean (>60 dB) |
+| 48×48 | artifact **33.1 dB** below signal | clean (>60 dB) |
+
+Nine to ten dB worse on the wider membrane, because a longer boundary means
+more of the scan touches it. Holed presets have an inner boundary as well as a
+rim, and both measure the same.
+
+**This is worth fixing** — two cells of clearance at each end makes every
+preset clean at both sizes. `rad_span` becomes `outer − inner − 4`, the base
+becomes `inner + 2`, and `rad_max` becomes `outer − 2`, with a guard for the
+32×32 thin ring, which is three cells wide and has no clean radius at all.
+
+**But it is not the reported symptom**, because it only bites at the extreme
+ends of in2's travel and the noise is heard across the whole range. Fix it on
+its own merits, not as the answer to this.
+
+## Still open
+
+`CIRC_SCALE = 6` caps the scan's own accuracy at 26–33 dB, which brackets the
+measured floor — so the circle ROM's six-bit cosine table is plausibly the
+dominant noise source. Raising it to 8 measured 5–8 dB better, and needs the
+ROM widened from 16 bits to 32 so cos and sin get 16 each.
+
+**It does not explain the novelty**: it degrades only 2–3 dB between the two
+grid sizes, and the symptom is described as new rather than slightly worse.
+
+## Two warnings for whoever picks this up
+
+**Beware the metric.** Two measurements in this investigation gave confident
+numbers and were measuring the wrong thing: one counted a larger circle's
+legitimate harmonic complexity as noise, and one used a smoothed reference that
+removed real spatial structure along with the roughness. Always compare against
+the *same* field read a *better* way, never against a different field.
+
+**The 48×48 build that "sounded rich" was broken.** It read a scrambled path
+through the membrane — `<< (n-1).bit_length()` is a multiply by n only when n
+is a power of two. So "it used to sound better" may be comparing against that,
+and the correctly-addressed scan may simply expose what was always there.
+
+## The next experiment
+
+Build ORBITA at n=32 with today's code and listen. Everything else identical —
+damping on in3, the fixed scan address, the derived constants. The size-derived
+constants follow, so it also reverts to 64 points and `F_EVOLVE` 1.0; that is a
+cluster of three, not one variable, but it separates "the size did it" from
+"something else I changed did it", and the second list is short.
