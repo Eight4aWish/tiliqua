@@ -12,9 +12,9 @@ pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 | jack | |
 |---|---|
 | in0 | drive — a gate edge plucks; a held level keeps it alive as a drone |
-| in1 | pitch — 1 V/oct, 0 V is 55 Hz, eight octaves to 7040 Hz |
+| in1 | pitch — 1 V/oct, 0 V is 27.5 Hz, eight octaves to 7040 Hz |
 | in2 | radius — the left scan circle, inner edge to outer edge, 256 steps; the right follows a quarter of the annulus out |
-| in3 | geometry — audio-rate modulation of the hole radius |
+| in3 | damping — how long the surface holds its shape. Unipolar for a slider: 0 V rings for ever, 4.4 V is a thud, 0.68 V a step |
 | out0 | scan L — the circle in2 selects |
 | out1 | scan R — a quarter of the annulus further out |
 | GPDI | the membrane, both scan circles, and the left one unrolled |
@@ -52,14 +52,18 @@ from the 1D version.
 **It is not an argument for needing an FPGA, and this was claimed here before.**
 The membrane updates once every 64 samples: 1024 nodes at roughly a dozen
 cycles each, spread over 64 samples, is about 190 cycles of the 10,000 an
-STM32H7 has per sample. The scan adds ~30. ORBITA's arithmetic would fit on the
+STM32H7 has per sample. At 48×48 it is 2304 nodes, so about 430 — still
+comfortably inside one sample's budget. The scan adds ~30. ORBITA's arithmetic would fit on the
 Daisy next door with 97% of its budget spare, and the 1D ancestor is proof the
 platform is willing. What gateware buys *here* is the free display and living
 in the same file as LACUNA — not throughput. The throughput argument belongs to
 LACUNA at 48 kHz, and only above 32×32; see LACUNA.md's "Where it goes next".
 
-At radius 10 the circumference is about 63 cells, so 64 points is close to one
-per cell — the same table length as the Daisy ring, and not a coincidence.
+The table length tracks the grid: 64 points at 32×32, 128 at 48×48. At 32×32
+and radius 10 the circumference is about 63 cells, so 64 points is close to one
+per cell — the same table length as the Daisy ring, and not a coincidence. At
+48×48 the radii scale with it and 128 keeps the same one-point-per-cell
+relationship.
 
 ## What the hole does
 
@@ -91,9 +95,14 @@ top of the scanned tone.
 | 8 Hz | 8 Hz | 23 Hz | **143 Hz** |
 | 1 Hz | 1 Hz | 2.9 Hz | **17 Hz** |
 
-`F_EVOLVE = 1.0`. A held note then morphs over about a second, which is what
-scanned synthesis is for. Faster and you are listening to the membrane rather
-than to the shape it makes.
+`F_EVOLVE = 1.0` at 32×32. A held note then morphs over about a second, which
+is what scanned synthesis is for. Faster and you are listening to the membrane
+rather than to the shape it makes.
+
+The 17× spread is a property of the grid, not a constant — it widens to 26× at
+48×48, so the wider membrane has to evolve *slower* to keep its checkerboard
+below hearing: `F_EVOLVE = 0.65`, and a held note morphs over about 1.5 s. A
+change of character rather than a fault.
 
 **A single-cell strike is a spatial white-noise generator.** ORBITA reads the
 membrane's *shape*, so roughness in space is noise in the waveform. Measured by
@@ -159,7 +168,10 @@ sits further out, where the membrane moves less. Physical, not a scaling error.
 
 ## Cost
 
-Whole build: 4489 LUT (18%), 10 BRAM, **19 of 28 multipliers**, both PLLs.
+Whole build at 32×32: 4489 LUT (18%), 10 BRAM, **19 of 28 multipliers**,
+both PLLs. At 48×48, which is what the released bitstreams build: 4513 LUT
+(18%), 17 BRAM, **22 of 28 multipliers**. The multipliers are the resource that
+runs out first, and the wider grid spends three more of them.
 Sync closes at 67.95 MHz, dvi at 76.96, dvi5x at 425.17 — on seed 6. The
 multipliers are the tightest resource; bilinear sampling took six of them, two
 to interpolate the angle, two to scale it by the radius and three to blend.
@@ -187,9 +199,11 @@ changes the design's size.
   jacks are spoken for and this is the parameter that lost.
 - **The strike always enters at the inner edge.** The mesh supports a strike
   position and ORBITA does not drive it, for the same reason.
-- **Sixty-four points per revolution.** Above roughly 2 kHz the table's own
-  harmonics begin to fold. Audible as character rather than as a fault, but it
-  is there.
+- **A finite table per revolution**, 64 points at 32×32 and 128 at 48×48. Above
+  roughly 2 kHz at 64 points the table's own harmonics begin to fold, which is
+  what doubling it was meant to push out to 4 kHz. Measuring the output
+  afterwards found no tonal content above 2–3 kHz to fold in the first place,
+  so that change bought nothing audible — see NOISE.md.
 - **19 of 28 multipliers used.** That is the resource that will run out first.
   Anything needing a genuinely parallel datapath, rather than another pass of
   the existing one, has nine to work with.

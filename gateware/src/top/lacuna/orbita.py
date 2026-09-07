@@ -13,10 +13,12 @@
 # Verplank/Mathews/Shaw scanned synthesis. See research/scan/DESIGN.md.
 #
 #     in0  drive      gate edge plucks; a held level keeps it alive as a drone
-#     in1  pitch      1 V/oct, 0 V is 55 Hz, eight octaves -- the scan rate,
-#                    not the membrane
-#     in2  radius     scan circle, inner edge to outer edge
-#     in3  geometry   audio-rate modulation of the hole radius
+#     in1  pitch      1 V/oct, 0 V is 27.5 Hz, eight octaves to 7040 Hz --
+#                     the scan rate, not the membrane
+#     in2  radius     scan circle, inner edge to outer edge (0-5 V)
+#     in3  damping    how long the surface holds its shape. Unipolar, for a
+#                     slider: 0 V rings for ever, 4.4 V is a thud, 0.68 V a
+#                     step. Nothing patched sits at the ringing end.
 #     out0 scan L     the circle in2 selects
 #     out1 scan R     a quarter of the annulus further out
 #     encoder short press cycles the preset (a 3 s hold still reboots)
@@ -125,8 +127,14 @@ K_FRAC = 30
 INV_MU_FRAC = 10
 LAM_MAX = 1 << (LAM_FRAC - 1)
 
-# Per-update decay. At 750 Hz updates, 10 is a time constant near 1.4 s.
-LOSS_SHIFT = 10
+# The ends of the damping control on in3. The decay is a per-update shift, so
+# at 750 Hz updates the time constant is 2**k / 750: LOSS_LO is 0.17 s and a
+# note is a thud, LOSS_HI is about 22 s and it very nearly never decays. Each
+# step doubles it. LOSS_HI is also where an unpatched jack sits.
+#
+# It used to be a bipolar mapping centred on 10 (1.4 s) at 0 V, which put half
+# the range below zero where a unipolar slider cannot reach it.
+LOSS_LO, LOSS_HI = 7, 14
 
 # Radius of the strike, in cells. ORBITA reads the membrane's shape directly,
 # so a one-cell impulse -- which excites the cell-to-cell checkerboard as hard
@@ -155,9 +163,15 @@ OUT_SHIFT = 0
 
 # Drive amplitude, as a shift on the 12-bit level from in0. Random signs make
 # the membrane a random walk, so the equilibrium amplitude is roughly the
-# injection times 2**((LOSS_SHIFT-1)/2) -- about 23x here. Driving every update
-# rather than every eighth is sqrt(8) louder at equilibrium, so this comes down
-# by two shifts to match.
+# injection times 2**((loss_shift-1)/2). Driving every update rather than every
+# eighth is sqrt(8) louder at equilibrium, so this comes down by two shifts to
+# match.
+#
+# This was tuned when damping was a compile-time 10, giving about 23x. in3 now
+# idles at LOSS_HI, where the same drive reaches roughly 90x -- so a held drone
+# is loudest at the ringing end of the slider, and the headroom that used to be
+# fixed is now something the player sets. The mesh clamps rather than wraps, so
+# the failure mode is saturation, not a blow-up.
 DRIVE_SHIFT = 1
 
 
@@ -248,12 +262,12 @@ class Orbita(wiring.Component):
         n = self.n
         cx = cy = n // 2
 
-        # in3 sets how long the membrane holds its shape. Clamped either side:
-        # below 7 a note is a thud, above 14 it never decays at all.
+        # in3 sets how long the membrane holds its shape, clamped either side.
         loss_cv = Signal(signed(8))
         loss_shift = Signal(range(24))
-        m.d.comb += loss_shift.eq(Mux(loss_cv < 7, 7,
-                                      Mux(loss_cv > 14, 14, loss_cv)))
+
+        m.d.comb += loss_shift.eq(Mux(loss_cv < LOSS_LO, LOSS_LO,
+                                      Mux(loss_cv > LOSS_HI, LOSS_HI, loss_cv)))
 
         m.submodules.mesh = mesh = Mesh(
             n=n, presets=self.presets, video=self.video, snapshot=True,
@@ -520,13 +534,21 @@ class Orbita(wiring.Component):
                         # scanned synthesis has had since Verplank. The hole is
                         # still there, chosen with the preset.
                         #
-                        # Rounded like the old fm mapping, so an idle jack reading
-                        # a count or two below zero does not knock it a whole shift
-                        # down. Roughly 1.25 V per step, from 7 (a quick thud) to
-                        # 14 (very nearly forever), with 0 V on the 10 it has
-                        # always been.
-                        loss_cv.eq(LOSS_SHIFT
-                                   + ((_raw(self.i.payload[3]) + (1 << 11)) >> 12)),
+                        # Mapped for a unipolar slider, not a bipolar CV. A 0-5 V
+                        # source on a +-5 V mapping only ever reaches half the
+                        # range, so all eight values live in positive travel
+                        # instead: 0 V rings for ever, 5 V is a thud, 0.68 V per
+                        # step. 3/8192 is 1/2731 counts per step and the multiply
+                        # is an add and a shift, which a divide by seven is not.
+                        # The +4096 puts the first transition half a step up, at
+                        # 0.34 V, so the steps are centred on the travel.
+                        #
+                        # An idle jack sits at the ringing end rather than in the
+                        # middle, which is the end this instrument is for: the
+                        # scan has nothing to read off a membrane that has already
+                        # stopped moving. Anything negative clamps there too.
+                        loss_cv.eq(LOSS_HI - ((_raw(self.i.payload[3]) * 3
+                                               + (1 << 12)) >> 13)),
                     ]
                     m.d.sync += pitch_q.eq(pitch)
                     m.next = "IDX"

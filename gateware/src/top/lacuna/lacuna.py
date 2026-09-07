@@ -10,7 +10,8 @@
 # stereo output.
 #
 #     in0  strike     rising edge above ~1 V
-#     in1  tension    1 V/oct, 55-880 Hz
+#     in1  tension    1 V/oct, 55-880 Hz at 32x32; 27.5-440 at 48x48, where
+#                     the ceiling falls with the wider grid
 #     in2  position   strike position, hub to rim
 #     in3  geometry   audio-rate modulation of the hole radius
 #     out0 mesh L     pickup on the +y axis

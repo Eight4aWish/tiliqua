@@ -1,6 +1,26 @@
 # ORBITA at 48×48 — the noise, and what it is not
 
-An open investigation, written down so the next session does not repeat it.
+## Closed, 7 September: it was not in the gateware
+
+The noise was **the external modulation source**. Bisecting the patch settled
+it in two moves: unplug in2 and in3 and ORBITA is clean at every preset and
+every radius; put a different, more stable source on in2 and it stays clean.
+The scan circle drawn on screen visibly jittered in and out with the original
+source patched, which is the same signal arriving at the display and the audio
+path — so the module was faithfully rendering a wobbly CV.
+
+Everything below is kept because the measurements are real and cost a day to
+make. **Read it as a record of what the gateware was cleared of, not as an open
+hunt.** Two genuine faults did surface along the way and are listed at the end.
+
+The general lesson, which was expensive: *six hypotheses in, nobody had
+unplugged a cable.* The investigation stayed inside the design because the
+design was what could be measured, and the one experiment that separated
+"module" from "rack" needed no instruments at all.
+
+---
+
+The original investigation follows.
 **Six hypotheses were tested and five are dead.** The measurements are in this
 file; re-deriving them costs a day.
 
@@ -75,10 +95,18 @@ ROM widened from 16 bits to 32 so cos and sin get 16 each.
 **It does not explain the novelty**: it degrades only 2–3 dB between the two
 grid sizes, and the symptom is described as new rather than slightly worse.
 
-## The strongest lead, found last
+## The strongest lead, found last — and wrong
 
-**The design is marginal at 60 MHz since damping became a CV, and the static
-arrived with that build.**
+Kept because the underlying observation is true and still matters: **the design
+is marginal at 60 MHz and seed choice decides whether it closes.** It was not
+the cause of the static, but it is a real fragility.
+
+Measured across builds at the 60.00 MHz target: 52.75, 55.92, 63.40, 63.48,
+65.83, 66.74. That is a 14 MHz spread from placement luck alone on the same
+source, and roughly half the seeds tried do not close at all. Any build that
+ships needs its timing report read, not assumed.
+
+The reasoning that made this look like the answer:
 
 Trying to build ORBITA at 32x32 for an A/B, all five seeds failed `sync`:
 55.9, 57.0, 58.0, 58.0, 59.3 MHz against 60.00. Consistent across seeds, so it
@@ -121,10 +149,25 @@ through the membrane — `<< (n-1).bit_length()` is a multiply by n only when n
 is a power of two. So "it used to sound better" may be comparing against that,
 and the correctly-addressed scan may simply expose what was always there.
 
-## The next experiment
+## The two real faults the hunt turned up
 
-Build ORBITA at n=32 with today's code and listen. Everything else identical —
-damping on in3, the fixed scan address, the derived constants. The size-derived
-constants follow, so it also reverts to 64 points and `F_EVOLVE` 1.0; that is a
-cluster of three, not one variable, but it separates "the size did it" from
-"something else I changed did it", and the second list is short.
+Neither caused the static, and both are worth having found.
+
+**LACUNA's decay ran off the end of its own table.** `base_loss` is derived
+from the grid size and comes out at 14 for 48×48; the octave term adds one more
+on the bottom half of the pitch range, giving `loss_shift` 15. `LOSS_MAX` was
+14, so the eight-entry `Array` in `decay()` was indexed at 8 and returned zero —
+**no decay at all**, on every note below the halfway point of the tension CV.
+That is why decay appeared to vary with pitch, and why the low notes could be
+driven into sustained feedback. `LOSS_MAX` is now 15 and the index is clamped
+at both ends, so the table can no longer be walked off.
+
+Worth knowing before "fixing" this any further: the runaway was *musically
+liked* — an undamped membrane makes striking visual patterns and a genuine
+feedback howl. If that is wanted back it should be a control that asks for it,
+not an array overflow that varies with which octave you happen to be playing.
+
+**Boundary grazing** — see above. Still unfixed, still worth fixing on its own
+merits: two cells of clearance at each end makes every preset clean at both grid
+sizes. It bites only at the extremes of in2's travel, which is why it was never
+the reported symptom.

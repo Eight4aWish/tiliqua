@@ -56,9 +56,13 @@ from amaranth.lib.wiring import In, Out
 # fractional bits that dead zone sits at -24 dBFS, freezing the tail at a DC
 # offset.
 WIDTH, FRAC = 24, 22
-# Range of the per-sample decay shift. Eight values, so the shift is a mux
-# over constants rather than a barrel shifter. LACUNA uses 13-14, ORBITA 7-14.
-LOSS_MIN, LOSS_MAX = 7, 14
+# Range of the per-sample decay shift. A short range, so the shift is a mux
+# over constants rather than a barrel shifter.
+# LACUNA drives base_loss plus up to one more from its per-octave tracking, so
+# at 48x48 that reaches 15. ORBITA's CV spans 7..14. The union is 7..15, and
+# getting this wrong is silent: an out-of-range Array index reads as zero, the
+# decay stops entirely, and the membrane runs away into feedback.
+LOSS_MIN, LOSS_MAX = 7, 15
 LAM_FRAC = 26                # lam2 fixed-point
 
 # (outer, inner, square_hole, slit, inv_mu_q). The inv_mu values are the
@@ -167,12 +171,12 @@ class Mesh(wiring.Component):
             "done":       Out(1),     # pulse: that update has finished
             # --- how the membrane behaves ---
             "lam2":       In(LAM_FRAC),
-            # Held to 7..14. A shift by a Signal is a barrel shifter -- 24
-            # possible amounts on a 28-bit value, in the middle of the per-node
-            # arithmetic -- and it cost ORBITA 6 MHz of a domain that had none
-            # spare when in3 became a damping control. Bounded to eight values
-            # it is a mux over eight constant shifts instead, and a constant
-            # shift is free wiring.
+            # Held to LOSS_MIN..LOSS_MAX. A shift by a Signal is a barrel
+            # shifter -- 24 possible amounts on a 28-bit value, in the middle of
+            # the per-node arithmetic -- and it cost ORBITA 6 MHz of a domain
+            # that had none spare when in3 became a damping control. Bounded to
+            # nine values it is a mux over nine constant shifts instead, and a
+            # constant shift is free wiring.
             "loss_shift": In(range(LOSS_MIN, LOSS_MAX + 1)),
             "preset_i":   In(range(len(presets))),
             "fm":         In(signed(16)),   # live hole-radius modulation
@@ -507,9 +511,17 @@ class Mesh(wiring.Component):
         # One constant shift per allowed amount, selected by a mux. Yosys turns
         # each `>> k` into wiring; only the select costs anything.
         #
+        # The index is clamped as well as the range widened. This overflowed
+        # once already and nothing caught it -- the tests drive tension values
+        # that happen to land in range, and an out-of-bounds Array index is
+        # legal Amaranth that reads as zero.
         def decay(v):
-            return Array([v >> k for k in range(LOSS_MIN, LOSS_MAX + 1)]
-                         )[self.loss_shift - LOSS_MIN]
+            idx = Signal(range(LOSS_MAX - LOSS_MIN + 1))
+            m.d.comb += idx.eq(Mux(self.loss_shift < LOSS_MIN, 0,
+                               Mux(self.loss_shift > LOSS_MAX,
+                                   LOSS_MAX - LOSS_MIN,
+                                   self.loss_shift - LOSS_MIN)))
+            return Array([v >> k for k in range(LOSS_MIN, LOSS_MAX + 1)])[idx]
 
         val_al = delay(scanning & (w < words), 5, "val")
 

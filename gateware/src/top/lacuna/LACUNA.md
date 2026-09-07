@@ -12,7 +12,7 @@ pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
 | jack | |
 |---|---|
 | in0 | strike — rising edge above ~1 V |
-| in1 | tension — 1 V/oct, 55–880 Hz |
+| in1 | tension — 1 V/oct, 55–880 Hz at 32×32; 27.5–440 Hz at 48×48 |
 | in2 | position — strike position, hub to rim |
 | in3 | geometry — audio-rate modulation of the hole radius |
 | out0 | mesh L — pickup on the +y axis |
@@ -44,12 +44,18 @@ here is *scale*, not geometry; see "Where it goes next".
 
 ## Cost
 
-| | |
-|---|---|
-| grid | 32×32, one node per cycle in raster order |
-| cycles per sample | **1037** measured, against 1250 at 60 MHz / 48 kHz |
-| state | 2 banks × 1024 × 24 bit = 48 kbit of 1008 |
-| with video | 3157 LUT (12%), 7 BRAM, 12 multipliers, both PLLs |
+Two sizes ship. 32×32 is the original, one node per cycle; 48×48 needs two
+lanes to fit the same budget and is what the released bitstreams build.
+
+| | 32×32, 1 lane | 48×48, 2 lanes |
+|---|---|---|
+| grid | 1024 nodes, raster order | 2304 nodes, two per cycle |
+| cycles per sample | **1037** of 1250 at 60 MHz / 48 kHz | **1165** of 1250 |
+| state | 2 banks × 1024 × 24 bit = 48 kbit of 1008 | 2 × 1152 × 48 bit = 108 kbit of 1008 |
+| with video | 3157 LUT (12%), 7 BRAM, 12 multipliers | 4230 LUT (17%), 14 BRAM, 22 multipliers |
+
+Both use both PLLs. At 48×48 the multipliers are the tight resource, not the
+logic: 22 of 28.
 
 Build at 48 kHz. At 192 kHz the budget is 312 cycles and this does not fit.
 
@@ -127,6 +133,18 @@ error during development (+79% four octaves down) — not dispersion. It tracks 
 half a shift per octave; at a full shift the bottom octave rang for 2.7 s
 against 0.34 s at the top and dominated everything.
 
+**And then it walked off the end of its own table.** The decay is a mux over a
+fixed set of constant shifts, indexed by `loss_shift`. At 48×48 `base_loss` is
+14, the octave tracking above adds one more on the bottom half of the tension
+range, and the table only held up to 14 — so the index ran one past the end. An
+out-of-range `Array` read is zero, and a decay of zero is **no damping at all**:
+the bottom half of the keyboard rang forever and could be driven into feedback.
+It presented as "decay varies with pitch", which is exactly what this section
+says the design does on purpose, so it hid in plain sight for a whole build
+cycle. The range is now 7..15 with the index clamped at both ends. Widening the
+grid changed a derived constant, and nothing checked that the table had grown
+with it.
+
 **The loss term is a shift, so it stops working.** Below `|u| < 2**loss_shift`
 the shift yields zero and decay stops dead. At one point that floor sat at
 −30 dBFS against a −24 dBFS peak: the tail fell 6 dB and froze. It made a
@@ -188,17 +206,26 @@ a full device crash.
 
 - **A feedback path.** Injecting the module's own output per sample would make
   the surface part of a patch rather than an endpoint.
-- **A larger mesh**, for more distinct modes in the audio band — but *not on
-  this scan*. The mesh retires one node per cycle, and 32×32 already spends
-  1037 of the 1250 cycles a 48 kHz sample allows. 64×64 needs about 4100 and
-  does not fit; more clock will not reach it either, since 4096 nodes at 48 kHz
-  is a 197 MHz sync domain and this pipeline closes at 65–68.
+- **A larger mesh**, for more distinct modes in the audio band — *done, and it
+  needed a new scan*. One node per cycle spends 1037 of the 1250 cycles a
+  48 kHz sample allows at 32×32, so 48×48's 2304 nodes could never fit that
+  way, and more clock does not reach it either: 4096 nodes at 48 kHz would be a
+  197 MHz sync domain and this pipeline closes at 65–68.
 
-  A bigger membrane at audio rate therefore means retiring **more than one node
-  per cycle** — four cells to a memory word, the delay line shifting by a word,
-  four lanes of the update. That is the one thing here a CPU cannot buy at any
-  clock: 64×64 at 48 kHz needs 4–7× an STM32H7's entire per-sample budget, at
-  every plausible instructions-per-node estimate.
+  So the update retires **more than one node per cycle** — L cells to a memory
+  word, the delay line shifting by a word, L lanes of the update. Two lanes put
+  48×48 at 1165 cycles measured, inside the budget.
+
+  On the same arithmetic four lanes would put 64×64's 4096 nodes in 1024 words,
+  so around 1033 cycles — the same as 32×32 costs today. That is not measured,
+  because 64×64 will not currently elaborate: there is no preset table for it
+  (`PRESETS_BY_N` holds 32 and 48), and `inv_mu` is a 17-bit signal that a
+  64×64 eigenvalue overflows. Neither is a throughput problem, which is the
+  point — the cycle budget stopped being the binding constraint at two lanes.
+
+  That is the one thing here a CPU cannot buy at any clock: 64×64 at 48 kHz
+  needs 4–7× an STM32H7's entire per-sample budget, at every plausible
+  instructions-per-node estimate.
 
   **ORBITA has no such limit.** At one update every 64 samples it has ~80,000
   cycles to spend, so 64×64 fits on the existing serial scan unchanged.

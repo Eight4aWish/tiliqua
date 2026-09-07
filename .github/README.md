@@ -5,9 +5,11 @@ bitstreams of my own. Everything upstream is unchanged and documented in
 [the root README](../README.md) and at
 [apfaudio.github.io/tiliqua](https://apfaudio.github.io/tiliqua/).
 
-Both instruments are the same 32×32 finite-difference membrane, in
+Both instruments are the same finite-difference membrane, in
 [`mesh.py`](../gateware/src/top/lacuna/mesh.py). They differ entirely in how it
-is driven.
+is driven. Two grid sizes ship: 32×32, and 48×48 — 2304 nodes, which LACUNA
+reaches only by updating two cells per cycle. The released bitstreams are
+48×48.
 
 | | [**LACUNA**](../gateware/src/top/lacuna/LACUNA.md) | [**ORBITA**](../gateware/src/top/orbita/ORBITA.md) |
 |---|---|---|
@@ -18,7 +20,7 @@ is driven.
 | in0 | strike | drive / drone |
 | in1 | tension, 1 V/oct | pitch, 1 V/oct, 8 octaves |
 | in2 | strike position | scan radius |
-| in3 | geometry — the hole | geometry — the hole |
+| in3 | geometry — the hole | damping — how long the shape lasts |
 | out0 | mesh L | scan L |
 | out1 | mesh R — 45° round | scan R — a wider circle |
 
