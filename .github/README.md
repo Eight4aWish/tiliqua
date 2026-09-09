@@ -8,9 +8,17 @@ Almost all of this is additive: 78 new files under `gateware/src/top/{mesh,silve
 and `research/`. Exactly two upstream files are touched —
 `gateware/pyproject.toml` gains two build entries, and
 `gateware/src/tiliqua/build/sim.py` gains `-std=c++17` on the Verilator flags,
-because class template argument deduction in the testbench drivers needs C++17
-and Apple clang defaults to older. That second one is a portability fix rather
-than a preference, and is worth offering back.
+without which `pdm <name> sim` does not build on macOS. Apple clang defaults to
+C++14 — measured, `__cplusplus` is 201402 on Apple clang 21 — so the flag raises
+a floor rather than expressing a preference, and toolchains already at C++17 or
+later are unaffected.
+
+Probably worth offering upstream, but **not yet**: what has been checked is the
+compiler default, not which construct actually needs C++17. An earlier version of
+this note blamed class template argument deduction in the testbench drivers, and
+none of the eight sim sources here contains any C++17-only construct at all, so
+the requirement most likely comes from Verilator's own generated code. Reproduce
+the failure and quote the real error before sending it to anyone.
 
 Both instruments are the same finite-difference membrane, in
 [`mesh.py`](../gateware/src/top/mesh/mesh.py). They differ entirely in how it
