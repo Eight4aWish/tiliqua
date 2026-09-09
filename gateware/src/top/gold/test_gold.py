@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
-"""ORBITA: does the circular scan actually produce a waveform?
+"""Gold: does the circular scan actually produce a waveform?
 
 The mesh takes ~1040 cycles per update, so the testbench has to pace samples at
 a realistic rate rather than free-running, or a second update is requested
@@ -11,7 +11,16 @@ before the first has finished and the membrane never advances.
 import numpy as np
 from amaranth.sim import Simulator
 
-from orbita import Orbita, nco_table, circle_table, CV_BITS
+import os
+import sys
+
+# mesh.py is the shared membrane and now lives beside this folder rather than in it.
+# Both instruments and their tests are run with only their own directory on sys.path,
+# so the sibling has to be added explicitly. Turning these into a package instead
+# would break the standalone tests, which import the modules directly.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mesh"))
+
+from gold import Gold, nco_table, circle_table, CV_BITS
 from mesh import PRESETS
 
 SAMPLE_CYCLES = 1250          # 60 MHz / 48 kHz
@@ -22,7 +31,7 @@ def _set_raw(ctx, port, v):
 
 
 def run(samples, pitch_cv, radius_cv, gate_of, preset=0, update_div=1):
-    dut = Orbita(n=32, update_div=update_div)
+    dut = Gold(n=32, update_div=update_div)
     sim = Simulator(dut)
     sim.add_clock(1e-6)
     got = []

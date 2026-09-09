@@ -11,7 +11,7 @@ multi-lane build has to be bit-identical to the one-lane build it replaces,
 sample for sample, on every preset -- and it has to cost proportionally fewer
 cycles, which is the entire point.
 
-This is the safety net for the work towards a larger membrane. test_lacuna.py
+This is the safety net for the work towards a larger membrane. test_silver.py
 proves one lane against a numpy reference; this proves every other lane count
 against one lane.
 
@@ -22,11 +22,11 @@ import sys
 
 from amaranth.sim import Simulator
 
-from lacuna import Lacuna, PRESETS
+from silver import Silver, PRESETS
 
 # Import the driving helpers from the existing test rather than restating them,
 # so the two stay in step.
-from test_lacuna import N, BASE_LOSS, _set_raw
+from test_silver import N, BASE_LOSS, _set_raw
 
 LANE_COUNTS = [1, 2, 4]
 SAMPLES = 24
@@ -34,7 +34,7 @@ SAMPLES = 24
 
 def run(lanes, preset, tension_cv, samples=SAMPLES):
     """Pickup value and cycle count per sample, for one lane count."""
-    dut = Lacuna(n=N, base_loss=BASE_LOSS, lanes=lanes)
+    dut = Silver(n=N, base_loss=BASE_LOSS, lanes=lanes)
     sim = Simulator(dut)
     sim.add_clock(1e-6)
     got, cycles = [], []

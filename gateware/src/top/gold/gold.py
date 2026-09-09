@@ -1,11 +1,11 @@
-# ORBITA -- the membrane as a wavetable.
+# Gold -- the membrane as a wavetable.
 #
 # Copyright (c) 2026 D. Baghurst
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
-# LACUNA listens to the mesh: the membrane vibrates at audio rate and a pickup
-# node is the output. ORBITA does the opposite. The membrane evolves slowly --
+# Silver listens to the mesh: the membrane vibrates at audio rate and a pickup
+# node is the output. Gold does the opposite. The membrane evolves slowly --
 # once every UPDATE_DIV audio samples -- and a circular path through it is read
 # at audio rate. The path's values are one cycle of a waveform and the scan rate
 # is the pitch, so timbre and pitch are independent and a held note morphs.
@@ -52,6 +52,15 @@ from amaranth.lib import data, stream, wiring
 from amaranth.lib.memory import Memory
 from amaranth.lib.wiring import In, Out
 
+import os
+import sys
+
+# mesh.py is the shared membrane and now lives beside this folder rather than in it.
+# Both instruments and their tests are run with only their own directory on sys.path,
+# so the sibling has to be added explicitly. Turning these into a package instead
+# would break the standalone tests, which import the modules directly.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mesh"))
+
 from mesh import Mesh, PRESETS, PRESETS_BY_N, WIDTH, FRAC, LAM_FRAC, _raw
 
 try:
@@ -90,7 +99,7 @@ RAD_FRAC = 4                  # sub-cell precision of the scan position
 
 # One mesh update every UPDATE_DIV audio samples. This, not lam2, is what makes
 # the membrane sub-audio: at 48 kHz / 64 the mesh advances at 750 Hz, so a mode
-# that would sit at 880 Hz in LACUNA lands near 14 Hz here.
+# that would sit at 880 Hz in Silver lands near 14 Hz here.
 UPDATE_DIV = 64
 UPDATE_RATE = FS / UPDATE_DIV
 
@@ -136,7 +145,7 @@ LAM_MAX = 1 << (LAM_FRAC - 1)
 # the range below zero where a unipolar slider cannot reach it.
 LOSS_LO, LOSS_HI = 7, 14
 
-# Radius of the strike, in cells. ORBITA reads the membrane's shape directly,
+# Radius of the strike, in cells. Gold reads the membrane's shape directly,
 # so a one-cell impulse -- which excites the cell-to-cell checkerboard as hard
 # as anything else -- is heard as noise in the waveform, not just as brightness.
 # Measured on a ring: one cell leaves neighbours agreeing in sign 61% of the
@@ -180,7 +189,7 @@ def lam2_for_presets(presets, f_evolve=F_EVOLVE):
 
     Both terms are compile-time constants -- the target frequency and each
     preset's own 1/-mu -- so this is a table, not a multiplier. Normalising by
-    mu matters for the same reason it does in LACUNA: without it the thin ring
+    mu matters for the same reason it does in Silver: without it the thin ring
     morphs a couple of octaves faster than the drum head and changing preset
     would change how alive the sound is.
     """
@@ -213,10 +222,10 @@ def circle_table(n_points=N_POINTS):
     return out
 
 
-class Orbita(wiring.Component):
+class Gold(wiring.Component):
 
     bitstream_help = BitstreamHelp(
-        brief="Orbita: the membrane scanned as a wavetable",
+        brief="Gold: the membrane scanned as a wavetable",
         io_left=['drive', 'pitch', 'radius', 'damping',
                  'scan L', 'scan R', '', ''],
         io_right=['preset', '', 'video (fixed)', '', '', '']
@@ -327,7 +336,7 @@ class Orbita(wiring.Component):
         # membrane as it currently is, rather than over absolute cell radii.
         # Taken absolutely, most of the range fell off the drum -- on the wide
         # ring only 6 of the 16 steps landed on it at all, and the rest were
-        # silence inside the hole or past the rim. Same fix as LACUNA's strike
+        # silence inside the hole or past the rim. Same fix as Silver's strike
         # position: scale by the span, not add to the edge.
         radius_cv = Signal(unsigned(8))
         radius = Signal(unsigned(5 + RAD_FRAC))     # cells, Q4
@@ -427,7 +436,7 @@ class Orbita(wiring.Component):
         # Held, not pulsed: the mesh does not reach the strike node until
         # hundreds of cycles into its scan, so an amplitude driven only on the
         # cycle that pulses `step` has long since gone back to zero by the time
-        # it is sampled. LACUNA gets away with a combinational constant.
+        # it is sampled. Silver gets away with a combinational constant.
         strike_amp = Signal(signed(WIDTH + 4))
         m.d.comb += mesh.strike_amp.eq(strike_amp)
 
@@ -516,7 +525,7 @@ class Orbita(wiring.Component):
                                         Mux(gate[13:16] > MALLET_MAX,
                                             MALLET_MAX, gate[13:16])))
                     m.d.sync += mesh.mallet_r.eq(MALLET_MAX - hard)
-                    # Same clamps as LACUNA's position CV: a bare bit-slice of a
+                    # Same clamps as Silver's position CV: a bare bit-slice of a
                     # signed value reads full scale for an idle jack one count
                     # below zero, and folds back around above 4 V.
                     m.d.sync += [
@@ -554,7 +563,7 @@ class Orbita(wiring.Component):
                     m.next = "IDX"
 
             with m.State("IDX"):
-                # Its own state for the same reason LACUNA needs one: pitch
+                # Its own state for the same reason Silver needs one: pitch
                 # arrives from the CODEC calibrator, and calibrator -> multiply
                 # -> clamp -> cv_index in a single cycle misses 60 MHz.
                 idx = Signal(signed(20))

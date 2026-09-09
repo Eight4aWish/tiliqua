@@ -1,23 +1,23 @@
-# ORBITA — the mesh as a wavetable, not as a drum
+# Gold — the mesh as a wavetable, not as a drum
 
 Design note, started 2026-09-03, path topology and name settled 2026-09-04.
 **Built 2026-09-04 and since revised — this is kept as the note it was, not
-as current documentation.** For what ORBITA actually does, see
-[ORBITA.md](../../gateware/src/top/orbita/ORBITA.md).
+as current documentation.** For what Gold actually does, see
+[GOLD.md](../../gateware/src/top/gold/GOLD.md).
 
 Two things here were settled differently in the building. The scan samples
 *between* cells rather than snapping to them, which the note lists only as an
 open question; and it is stereo, from two circles at different radii.
 
-**ORBITA** — Latin for a wheel-track or circuit, from *orbis*, a circle; the
+**Gold** — Latin for a wheel-track or circuit, from *orbis*, a circle; the
 ancestor of "orbit", and it names the path traced rather than the shape. It also
 carries the sense of a rut worn by repeated passage, which suits something going
-round the same circle a couple of hundred times a second. Sits next to LACUNA in
+round the same circle a couple of hundred times a second. Sits next to Silver in
 the bootloader as its counterpart: the gap, and the circuit around it.
 
 ## The idea
 
-Lacuna listens to the mesh: the membrane vibrates at audio rate and a pickup node
+Silver listens to the mesh: the membrane vibrates at audio rate and a pickup node
 becomes the output. **Scan** does the opposite. The mesh evolves *slowly* — tens
 of Hz, sub-audio — and a closed path through it is read at audio rate. The path's
 values are one cycle of a waveform; the scan rate is the pitch. Timbre and pitch
@@ -105,11 +105,11 @@ duty-cycle behaviour as well — worth keeping as a later control, but not in v1
 
 ## Why it is mostly already built
 
-`daisy_scanned` and `lacuna` are the same mathematics. The leapfrog integration,
+`daisy_scanned` and `silver` are the same mathematics. The leapfrog integration,
 the tension control and the pitch-tracked damping all exist in
-`gateware/src/top/lacuna/lacuna.py`:
+`gateware/src/top/silver/silver.py`:
 
-| `ScannedVoice` (Daisy) | lacuna (Tiliqua) |
+| `ScannedVoice` (Daisy) | silver (Tiliqua) |
 |---|---|
 | `pos_[64]` / `prev_[64]`, ring of masses | the two mesh banks, 32×32 |
 | `tension_` — wave speed | `lam2`, from the tuning table |
@@ -127,7 +127,7 @@ with the FSM idling between, while the output is produced every sample from the
 snapshot. This is the structural change and it touches the state machine that
 took three rounds of timing work to stabilise, so it belongs on its own branch.
 
-**2. A full-width snapshot.** The display snapshot added for lacuna's video is
+**2. A full-width snapshot.** The display snapshot added for silver's video is
 already a free copy of the mesh, written from the scan that carries every node
 past `wr_addr` / `written` / `wr_valid` once per update — but it is quantised to
 8 bits for the palette. Scan needs the same trick at 16 bits or more, with a read
@@ -136,13 +136,13 @@ port in the audio domain. One BRAM.
 **3. Phase accumulator, ROM lookup and interpolation.** A plain NCO whose phase
 indexes the circle ROM, with linear interpolation between adjacent points.
 
-Note that pitch stops going through the tuning table entirely. In lacuna, CV →
+Note that pitch stops going through the tuning table entirely. In silver, CV →
 `lam2` → mode frequency. In scan, CV → phase increment, and `lam2` becomes a pure
 timbre control ("tension"). That is simpler than what is there now, not harder.
 
 ## Cost
 
-Comfortable. Current occupancy of the whole lacuna + video build on the
+Comfortable. Current occupancy of the whole silver + video build on the
 LFE5U-25F:
 
 | | used | free |
@@ -170,16 +170,16 @@ interpolation) and a few hundred LUTs.
 - **Hard edges at slit and corner crossings.** A notch is a step into zero and
   back, which is bright. That is the point, but it may want slewing — worth
   hearing first.
-- **Where it lives.** A separate top-level (`top/orbita/`) reusing a factored-out
-  mesh module, rather than a mode inside lacuna — it is a different instrument.
+- **Where it lives.** A separate top-level (`top/gold/`) reusing a factored-out
+  mesh module, rather than a mode inside silver — it is a different instrument.
   All eight flash slots are currently full, so something has to give.
 
 ## First steps
 
-1. Branch off `lacuna`.
-2. Factor the mesh update out of `lacuna.py` so both top-levels share it.
+1. Branch off `silver`.
+2. Factor the mesh update out of `silver.py` so both top-levels share it.
 3. Widen the snapshot to 16 bits and give it an audio-domain read port; confirm
-   lacuna's video still looks right and `test_lacuna.py` still passes bit-exact.
+   silver's video still looks right and `test_silver.py` still passes bit-exact.
 4. Add the update divider, still with divider = 1, and confirm bit-exactness
    again — that isolates the FSM change from everything else.
 5. Add the circle ROM, the NCO and the radius control, and listen before touching

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
 """
-Verification for the Lacuna core.
+Verification for the Silver core.
 
 1. The mesh is bit-exact against a numpy reference implementing the same
    arithmetic, including the tension multiply and the pitch-tracked damping.
@@ -11,14 +11,14 @@ Verification for the Lacuna core.
    limit on every preset.
 3. The scan fits the cycle budget.
 
-Run:  python test_lacuna.py
+Run:  python test_silver.py
 """
 
 import math
 import numpy as np
 from amaranth.sim import Simulator
 
-from lacuna import (Lacuna, tuning_table, PRESETS, WIDTH, FRAC, LAM_FRAC,
+from silver import (Silver, tuning_table, PRESETS, WIDTH, FRAC, LAM_FRAC,
                     K_FRAC, INV_MU_FRAC, LAM_MAX, CV_BITS, OCTAVES, F_LO, FS,
                     VOCT_Q16)
 
@@ -29,7 +29,7 @@ TABLE = tuning_table()
 
 
 def _set_raw(ctx, port, v):
-    """Mirror of lacuna._raw: write raw bits whether ASQ is fixed or plain."""
+    """Mirror of silver._raw: write raw bits whether ASQ is fixed or plain."""
     ctx.set(port.as_value() if hasattr(port, "as_value") else port, v)
 
 
@@ -85,7 +85,7 @@ def reference(preset, tension_cv, samples, strike_cv=0):
 
 
 def run_core(tension_cv, samples):
-    dut = Lacuna(n=N, base_loss=BASE_LOSS)
+    dut = Silver(n=N, base_loss=BASE_LOSS)
     sim = Simulator(dut)
     sim.add_clock(1e-6)
     got, cycles = [], []

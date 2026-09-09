@@ -2,9 +2,9 @@
 
 > **Historical.** This records the exploration, not the instruments that came
 > out of it. The membrane now lives in
-> [`gateware/src/top/lacuna/mesh.py`](../../gateware/src/top/lacuna/mesh.py) and
-> is played by [LACUNA](../../gateware/src/top/lacuna/LACUNA.md) and
-> [ORBITA](../../gateware/src/top/orbita/ORBITA.md). Build and install
+> [`gateware/src/top/mesh/mesh.py`](../../gateware/src/top/mesh/mesh.py) and
+> is played by [Silver](../../gateware/src/top/silver/SILVER.md) and
+> [Gold](../../gateware/src/top/gold/GOLD.md). Build and install
 > instructions below are superseded.
 
 
@@ -35,7 +35,7 @@ displacement, blue negative, one shared scale across all twelve frames.*
 
 ## Result: the modes are right — at R=30
 
-**These numbers are for a radius-30 membrane, which needs a 64×64 grid. LACUNA
+**These numbers are for a radius-30 membrane, which needs a 64×64 grid. Silver
 ships at radius 14 on 32×32, where they are roughly four times worse.** Nothing
 below is wrong, but do not quote it as the accuracy of the instrument.
 `mode_accuracy.py` measures all three sizes against the same Bessel ratios:
@@ -48,7 +48,7 @@ below is wrong, but do not quote it as the accuracy of the instrument.
 
 The split matters more than the error. On a true circle every m ≥ 1 mode is a
 *pair* at identical frequencies; a rectilinear grid staircases the circle and
-splits them, and that split is the mode beating LACUNA.md describes as the
+splits them, and that split is the mode beating SILVER.md describes as the
 pattern precessing on screen. Measured in units of the fundamental, so at a
 220 Hz note the worst pair beats at about 10 Hz on the shipped mesh and about
 2 Hz at R=30. Ten hertz is a buzz, not a precession — which is the real reason
@@ -210,7 +210,7 @@ still not built.
 
 - Frequency-dependent damping is **not implemented**, and an attempt at it was
   measured and abandoned: adding a fraction of the Laplacian back each update
-  moved spatial coherence from 62% to 64% and made ORBITA's output waveform
+  moved spatial coherence from 62% to 64% and made Gold's output waveform
   rougher, not smoother. The real cause of the roughness it was meant to fix
   turned out to be the excitation -- a single-cell strike is a spatial
   white-noise generator -- so `mesh.py` gained a mallet radius instead.

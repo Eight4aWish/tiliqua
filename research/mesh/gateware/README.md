@@ -2,9 +2,9 @@
 
 > **Historical.** This records the exploration, not the instruments that came
 > out of it. The membrane now lives in
-> [`gateware/src/top/lacuna/mesh.py`](../../../gateware/src/top/lacuna/mesh.py) and
-> is played by [LACUNA](../../../gateware/src/top/lacuna/LACUNA.md) and
-> [ORBITA](../../../gateware/src/top/orbita/ORBITA.md). Build and install
+> [`gateware/src/top/mesh/mesh.py`](../../../gateware/src/top/mesh/mesh.py) and
+> is played by [Silver](../../../gateware/src/top/silver/SILVER.md) and
+> [Gold](../../../gateware/src/top/gold/GOLD.md). Build and install
 > instructions below are superseded.
 
 
@@ -46,8 +46,8 @@ fit; that needs the four-datapath version.
 ## Install (superseded)
 
 This is how the prototype was tried out as a `dsp` demo core. It is not how the
-membrane is built now: it became `top/lacuna/mesh.py`, shared by two top-level
-bitstreams of its own, and `pdm lacuna build` / `pdm orbita build`.
+membrane is built now: it became `top/silver/mesh.py`, shared by two top-level
+bitstreams of its own, and `pdm silver build` / `pdm gold build`.
 
 ```bash
 cp mesh_core.py /path/to/tiliqua/gateware/src/top/dsp/

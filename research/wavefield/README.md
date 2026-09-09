@@ -1,7 +1,7 @@
 # Wavefield — a beamracing core for Tiliqua
 > **Historical.** An earlier beamracing experiment, and the precursor to the
-> video in [LACUNA](../../gateware/src/top/lacuna/LACUNA.md) and
-> [ORBITA](../../gateware/src/top/orbita/ORBITA.md) -- same idea of computing
+> video in [Silver](../../gateware/src/top/silver/SILVER.md) and
+> [Gold](../../gateware/src/top/gold/GOLD.md) -- same idea of computing
 > each pixel microseconds before it is sent, but those draw the membrane from a
 > snapshot the audio scan keeps up to date rather than from the live inputs.
 > The install instructions below target upstream's `beamrace` top-level and are

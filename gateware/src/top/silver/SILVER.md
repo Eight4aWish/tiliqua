@@ -1,12 +1,12 @@
-# Lacuna
+# Silver
 
 A 2D membrane mesh whose hole is the instrument.
 
 ```bash
 cd gateware
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
-    pdm lacuna build --modeline 1280x720p60
-pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
+    pdm silver build --modeline 1280x720p60
+pdm flash archive build/silver-r5/silver-<tag>-r5.tar.gz --slot <n>
 ```
 
 | jack | |
@@ -24,7 +24,7 @@ Eight presets: three solid drum heads (r14, r10, r7), then narrow hole, wide
 ring, thin ring, square hole, slit ring.
 
 The membrane itself lives in [`mesh.py`](mesh.py), shared with
-[ORBITA](../orbita/ORBITA.md), which updates the same mesh once every 64
+[Gold](../gold/GOLD.md), which updates the same mesh once every 64
 samples instead of every one, and reads a circle through it as a wavetable.
 
 ## Why gateware
@@ -170,7 +170,7 @@ runs, sounding plausible but wrong.
 
 ## Verification
 
-`python test_lacuna.py` (standalone, no toolchain needed — `shims.py` stands in
+`python test_silver.py` (standalone, no toolchain needed — `shims.py` stands in
 for the tree's types). Checks the mesh bit-exact against a numpy reference at
 two tension settings, that every preset actually rings, that the tuning table is
 1 V/oct and within the stability limit, and that the scan fits the cycle budget.
@@ -192,10 +192,10 @@ a full device crash.
 
 ## Limitations
 
-- **Single-node strike.** `mesh.py` supports a mallet radius and LACUNA leaves
+- **Single-node strike.** `mesh.py` supports a mallet radius and Silver leaves
   it at zero: a one-cell strike is brighter and slightly harsher, which suits a
   struck instrument heard through a pickup. It is a choice, not an oversight —
-  ORBITA needs the opposite because it reads the shape rather than a point.
+  Gold needs the opposite because it reads the shape rather than a point.
 - **Geometry FM uses a hard mask**, so a fast sweep of in3 is broadband noise
   at the boundary. An energy-conserving moving boundary is an open problem in
   the literature, not a coding task.
@@ -227,5 +227,5 @@ a full device crash.
   needs 4–7× an STM32H7's entire per-sample budget, at every plausible
   instructions-per-node estimate.
 
-  **ORBITA has no such limit.** At one update every 64 samples it has ~80,000
+  **Gold has no such limit.** At one update every 64 samples it has ~80,000
   cycles to spend, so 64×64 fits on the existing serial scan unchanged.

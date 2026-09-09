@@ -7,10 +7,10 @@
 # this design uses.
 #
 """
-ORBITA: the membrane scanned as a wavetable.
+Gold: the membrane scanned as a wavetable.
 
-Sibling to LACUNA and sharing its membrane. LACUNA listens to the mesh through
-a pickup; ORBITA evolves it slowly and reads a circular path through it at
+Sibling to Silver and sharing its membrane. Silver listens to the mesh through
+a pickup; Gold evolves it slowly and reads a circular path through it at
 audio rate, so the scan rate is the pitch and the membrane's shape is the
 timbre. See research/scan/DESIGN.md.
 
@@ -18,8 +18,8 @@ timbre. See research/scan/DESIGN.md.
 
    # from the `gateware` directory
    AMARANTH_nextpnr_opts="--timing-allow-fail --seed 6" \
-       pdm orbita build --modeline 1280x720p60
-   pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
+       pdm gold build --modeline 1280x720p60
+   pdm flash archive build/gold-r5/gold-<tag>-r5.tar.gz --slot <n>
 
 The seed matters. This design sits close enough to the routing limit that the
 1280x720 serialiser's 371 MHz closes on some placements and not others -- it
@@ -30,7 +30,7 @@ the radius scaling went in.
 The environment override is used rather than editing tiliqua's own cli.py,
 which would be a permanent rebase conflict against upstream.
 
-The display draws the membrane exactly as LACUNA does, and overlays the scan
+The display draws the membrane exactly as Silver does, and overlays the scan
 circle on it, so you can see the path the waveform is being read from and where
 it sits relative to the hole.
 """
@@ -48,14 +48,14 @@ from tiliqua.periph import eurorack_pmod
 from tiliqua.platform import RebootProvider
 from tiliqua.video import dvi
 
-# ORBITA and LACUNA share mesh.py, and each top level is run as a script with
+# Gold and Silver share mesh.py, and each top level is run as a script with
 # only its own directory on the path. Rather than duplicate the membrane or
 # turn these into a package -- which would break the standalone tests that
-# import them directly -- reach across to the sibling directory.
+# import them directly -- reach across to the shared mesh directory.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "lacuna"))
+                                "..", "mesh"))
 
-from orbita import Orbita          # noqa: E402
+from gold import Gold          # noqa: E402
 
 
 # The mesh is 32x32 and each cell is drawn as a CELL x CELL block, which is a
@@ -85,15 +85,15 @@ def wave_shift(points, side):
     return 0
 
 
-class OrbitaTop(Elaboratable):
+class GoldTop(Elaboratable):
 
     def __init__(self, clock_settings):
         assert clock_settings.modeline is not None, (
-            "orbita draws the mesh and races the beam to do it, so it needs a "
+            "gold draws the mesh and races the beam to do it, so it needs a "
             "static modeline: pass e.g. --modeline 1280x720p60")
-        # LACUNA_N picks the grid size, as it does for LACUNA itself.
-        self.core = Orbita(video=True,
-                           n=int(os.environ.get("LACUNA_N", "32")))
+        # MESH_N picks the grid size, as it does for Silver itself.
+        self.core = Gold(video=True,
+                           n=int(os.environ.get("MESH_N", "32")))
         self.core.audio_clock = clock_settings.audio_clock
         self.clock_settings = clock_settings
         self.pmod0 = eurorack_pmod.EurorackPmod(clock_settings.audio_clock)
@@ -106,7 +106,7 @@ class OrbitaTop(Elaboratable):
         m.submodules.pmod0 = pmod0 = self.pmod0
         m.submodules.core = core = self.core
 
-        assert sim.is_hw(platform), "orbita's video path has no sim harness"
+        assert sim.is_hw(platform), "gold's video path has no sim harness"
 
         m.submodules.car = platform.clock_domain_generator(self.clock_settings)
         m.submodules.provider = provider = eurorack_pmod.FFCProvider()
@@ -151,7 +151,7 @@ class OrbitaTop(Elaboratable):
         # cyc*n + cxc, not Cat: the concatenation is the cell address only
         # when n is a power of two, and 48 is not.
         #
-        # The multiply is registered, for the same reason LACUNA's is: it is a
+        # The multiply is registered, for the same reason Silver's is: it is a
         # function of the row, cyc changing once every `1 << shift` scanlines,
         # and left in the per-pixel path it took dvi to 71.66 MHz against
         # 74.25. row_base settles one pixel into each line, long before the
@@ -279,7 +279,7 @@ class OrbitaTop(Elaboratable):
                                   & (rr2b - dd2 < rad2_q))
         m.d.dvi += [on_circle_q.eq(on_circle), on_circle2_q.eq(on_circle2)]
 
-        # Diverging palette, as LACUNA: 0 is outside the membrane, 128 a node at
+        # Diverging palette, as Silver: 0 is outside the membrane, 128 a node at
         # rest, and the two signs of displacement go to blue and red. The scan
         # circle is added as a green wash so it reads over either sign without
         # hiding the mesh underneath it.
@@ -328,4 +328,4 @@ class OrbitaTop(Elaboratable):
 
 
 if __name__ == "__main__":
-    top_level_cli(OrbitaTop)
+    top_level_cli(GoldTop)

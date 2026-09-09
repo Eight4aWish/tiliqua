@@ -2,17 +2,17 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "lacuna: build bitstream (seed 1)",
+      "label": "silver: build bitstream (seed 1)",
       "type": "shell",
-      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 1\" pdm run lacuna build --modeline 1280x720p60",
+      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 1\" pdm run silver build --modeline 1280x720p60",
       "options": { "cwd": "${workspaceFolder}/gateware" },
       "problemMatcher": [],
       "group": { "kind": "build", "isDefault": true }
     },
     {
-      "label": "orbita: build bitstream (seed 6)",
+      "label": "gold: build bitstream (seed 6)",
       "type": "shell",
-      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 6\" pdm run orbita build --modeline 1280x720p60",
+      "command": "AMARANTH_nextpnr_opts=\"--timing-allow-fail --seed 6\" pdm run gold build --modeline 1280x720p60",
       "options": { "cwd": "${workspaceFolder}/gateware" },
       "problemMatcher": [],
       "group": "build"
@@ -20,8 +20,8 @@
     {
       "label": "mesh: standalone tests (no toolchain)",
       "type": "shell",
-      "command": "python test_lacuna.py && python test_orbita.py",
-      "options": { "cwd": "${workspaceFolder}/gateware/src/top/lacuna" },
+      "command": "(cd silver && python test_silver.py && python test_lanes.py) && (cd gold && python test_gold.py)",
+      "options": { "cwd": "${workspaceFolder}/gateware/src/top" },
       "problemMatcher": [],
       "group": { "kind": "test", "isDefault": true }
     },

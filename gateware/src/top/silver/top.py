@@ -7,24 +7,24 @@
 # this design uses.
 #
 """
-Lacuna: a 2D membrane mesh whose hole is the instrument.
+Silver: a 2D membrane mesh whose hole is the instrument.
 
-See LACUNA.md for the design, and lacuna.py for the mesh itself. Build and
+See SILVER.md for the design, and silver.py for the mesh itself. Build and
 flash it as follows:
 
 .. code-block:: bash
 
    # from the `gateware` directory
    AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
-       pdm lacuna build --modeline 720x720p60r2
-   pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot <n>
+       pdm silver build --modeline 720x720p60r2
+   pdm flash archive build/silver-r5/silver-<tag>-r5.tar.gz --slot <n>
 
 The placer seed is pinned. This design sits close enough to the routing limit
 that results vary widely on changes that cannot affect them -- across five
 seeds the sync domain came out between 65.7 and 68.5 MHz and the 371 MHz
 serialiser between 324 and 406, with two seeds failing outright. Seed 2 gives
 the best worst-case margin as it stands; re-check after any change of size.
-ORBITA pins its own, and they are not the same.
+Gold pins its own, and they are not the same.
 
 The display shows the membrane itself rather than its output waveform: a
 32x32 grid of node values, upscaled and drawn straight from a snapshot the
@@ -50,7 +50,7 @@ from tiliqua.periph import eurorack_pmod
 from tiliqua.platform import RebootProvider
 from tiliqua.video import dvi
 
-from lacuna import Lacuna
+from silver import Silver
 
 
 # Each cell is drawn as a square block, upscaled by a shift rather than a
@@ -65,19 +65,19 @@ def cell_shift(n, modeline):
     raise ValueError(f"a {n}x{n} mesh does not fit this modeline at any scale")
 
 
-class LacunaTop(Elaboratable):
+class SilverTop(Elaboratable):
 
     def __init__(self, clock_settings):
         assert clock_settings.modeline is not None, (
-            "lacuna draws the mesh and races the beam to do it, so it needs a "
+            "silver draws the mesh and races the beam to do it, so it needs a "
             "static modeline: pass e.g. --modeline 720x720p60r2")
-        # LACUNA_LANES sweeps the scan width from the shell without touching
+        # MESH_LANES sweeps the scan width from the shell without touching
         # upstream's build CLI. One lane is the shipped instrument; wider ones
         # are bit-identical (test_lanes.py) and exist so a larger membrane can
         # fit the 1250-cycle budget. Timing is the open question, not function.
-        self.core = Lacuna(video=True,
-                           n=int(os.environ.get("LACUNA_N", "32")),
-                           lanes=int(os.environ.get("LACUNA_LANES", "1")))
+        self.core = Silver(video=True,
+                           n=int(os.environ.get("MESH_N", "32")),
+                           lanes=int(os.environ.get("MESH_LANES", "1")))
         self.core.audio_clock = clock_settings.audio_clock
         self.clock_settings = clock_settings
         self.pmod0 = eurorack_pmod.EurorackPmod(clock_settings.audio_clock)
@@ -90,7 +90,7 @@ class LacunaTop(Elaboratable):
         m.submodules.pmod0 = pmod0 = self.pmod0
         m.submodules.core = core = self.core
 
-        assert sim.is_hw(platform), "lacuna's video path has no simulation harness"
+        assert sim.is_hw(platform), "silver's video path has no simulation harness"
 
         m.submodules.car = platform.clock_domain_generator(self.clock_settings)
         m.submodules.provider = provider = eurorack_pmod.FFCProvider()
@@ -239,4 +239,4 @@ class LacunaTop(Elaboratable):
 
 
 if __name__ == "__main__":
-    top_level_cli(LacunaTop)
+    top_level_cli(SilverTop)

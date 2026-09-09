@@ -1,17 +1,24 @@
 # Tiliqua — two instruments on a membrane
 
 A fork of [apfaudio/tiliqua](https://github.com/apfaudio/tiliqua) adding two
-bitstreams of my own. Everything upstream is unchanged and documented in
-[the root README](../README.md) and at
-[apfaudio.github.io/tiliqua](https://apfaudio.github.io/tiliqua/).
+bitstreams of my own, documented upstream in [the root README](../README.md) and
+at [apfaudio.github.io/tiliqua](https://apfaudio.github.io/tiliqua/).
+
+Almost all of this is additive: 78 new files under `gateware/src/top/{mesh,silver,gold}`
+and `research/`. Exactly two upstream files are touched —
+`gateware/pyproject.toml` gains two build entries, and
+`gateware/src/tiliqua/build/sim.py` gains `-std=c++17` on the Verilator flags,
+because class template argument deduction in the testbench drivers needs C++17
+and Apple clang defaults to older. That second one is a portability fix rather
+than a preference, and is worth offering back.
 
 Both instruments are the same finite-difference membrane, in
-[`mesh.py`](../gateware/src/top/lacuna/mesh.py). They differ entirely in how it
-is driven. Two grid sizes ship: 32×32, and 48×48 — 2304 nodes, which LACUNA
+[`mesh.py`](../gateware/src/top/mesh/mesh.py). They differ entirely in how it
+is driven. Two grid sizes ship: 32×32, and 48×48 — 2304 nodes, which Silver
 reaches only by updating two cells per cycle. The released bitstreams are
 48×48.
 
-| | [**LACUNA**](../gateware/src/top/lacuna/LACUNA.md) | [**ORBITA**](../gateware/src/top/orbita/ORBITA.md) |
+| | [**Silver**](../gateware/src/top/silver/SILVER.md) | [**Gold**](../gateware/src/top/gold/GOLD.md) |
 |---|---|---|
 | | a struck membrane | a scanned wavetable |
 | the mesh | runs at 48 kHz | runs at 750 Hz |
@@ -24,14 +31,14 @@ reaches only by updating two cells per cycle. The released bitstreams are
 | out0 | mesh L | scan L |
 | out1 | mesh R — 45° round | scan R — a wider circle |
 
-Both are stereo. LACUNA takes two pickups 45° apart on the membrane;
-ORBITA scans two circles at different radii. That is
+Both are stereo. Silver takes two pickups 45° apart on the membrane;
+Gold scans two circles at different radii. That is
 real decorrelation rather than a widener: measured L/R correlation runs 0.50 on
 the solid heads and near zero on the ring geometries, because angular modes
 differ between the two positions while the radially symmetric ones stay common.
 A *mirrored* second pickup would have measured 1.00 — mono with extra steps.
 
-ORBITA samples the membrane *between* cells rather than snapping to them, which
+Gold samples the membrane *between* cells rather than snapping to them, which
 took waveform roughness from 0.579 to 0.029–0.094 and gave the radius control
 256 steps instead of 16.
 
@@ -47,12 +54,12 @@ State that as cost rather than impossibility, though: a CPU can run the same two
 comparisons inline instead of rebuilding an array, so audio-rate geometry is expensive
 there, not unavailable. What a CPU cannot buy at any clock is **scale** — a 64×64
 membrane at 48 kHz needs more than one node retired per cycle, and 4–7× an STM32H7's
-entire per-sample budget. See LACUNA.md, "Where it goes next".
+entire per-sample budget. See SILVER.md, "Where it goes next".
 
 The display is the other real difference, and it is also a cost argument: here it is
 written straight from the audio scan and takes no cycles at all.
 
-ORBITA takes the same idea into scanned synthesis. A concentric scan circle
+Gold takes the same idea into scanned synthesis. A concentric scan circle
 never crosses a concentric hole, so the *asymmetric* geometries are the
 interesting ones: the slit gives one notch per revolution and a full harmonic
 series, the square hole four notches and a fourth-harmonic emphasis. The
@@ -72,7 +79,7 @@ pattern rather than a brightness envelope. That matters because the mesh's most
 characteristic behaviour — mode beating between near-degenerate pairs — appears
 as the pattern *precessing*, which no waveform display can show.
 
-ORBITA additionally draws the scan circle over the membrane and the same circle
+Gold additionally draws the scan circle over the membrane and the same circle
 *unrolled* as a waveform strip beneath it, phase-locked by construction, so a
 feature at an angle on the ring sits directly above the sample it produced.
 
@@ -87,21 +94,21 @@ pdm install
 
 # or one at a time
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 1" \
-    pdm lacuna build --modeline 1280x720p60
+    pdm silver build --modeline 1280x720p60
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 6" \
-    pdm orbita build --modeline 1280x720p60
+    pdm gold build --modeline 1280x720p60
 ```
 
 Flash a built archive into one of the bootloader's eight slots:
 
 ```bash
 pdm flash status                                    # what is in the slots now
-pdm flash archive build/lacuna-r5/lacuna-<tag>-r5.tar.gz --slot 3
+pdm flash archive build/silver-r5/silver-<tag>-r5.tar.gz --slot 3
 ```
 
 **Pin the placer seed.** These designs sit close enough to the ECP5's routing
 limit that identical RTL places very differently run to run — across five seeds
-LACUNA's sync domain came out 65.7–68.5 MHz and the 1280×720 serialiser
+Silver's sync domain came out 65.7–68.5 MHz and the 1280×720 serialiser
 324–406 MHz, with two seeds failing outright, on changes that cannot affect
 them. An unpinned build shipped at 63.25 MHz against a 60 MHz constraint and
 coincided with a full device crash. The seed is set through the environment
@@ -115,9 +122,9 @@ is not a standard timing.
 ## Testing
 
 ```bash
-cd gateware/src/top/lacuna
-python test_lacuna.py     # the membrane: bit-exact, tuning, every preset rings
-python test_orbita.py     # the scan: circle, pluck, radius sweep, drone
+cd gateware/src/top/silver
+python test_silver.py     # the membrane: bit-exact, tuning, every preset rings
+python test_gold.py     # the scan: circle, pluck, radius sweep, drone
 ```
 
 Both run standalone with no FPGA toolchain — `shims.py` stands in for the tree's
@@ -139,7 +146,7 @@ were tried before they became bitstreams, and are superseded:
 
 - [`research/mesh/`](../research/mesh) — the fixed-point reference model, the
   annulus family, mode analysis, and the audio that came out of it
-- [`research/scan/DESIGN.md`](../research/scan/DESIGN.md) — the ORBITA design
+- [`research/scan/DESIGN.md`](../research/scan/DESIGN.md) — the Gold design
   note, written before it was built
 - [`research/wavefield/`](../research/wavefield) — an earlier beamracing
   experiment
@@ -157,7 +164,7 @@ That applies to bitstreams too: a `.tar.gz` from the releases page is the
 more permissive terms than upstream's, and nothing is intended to be.
 
 New files carry their own copyright and an `SPDX-License-Identifier`. The two
-top levels — `top/lacuna/top.py` and `top/orbita/top.py` — are reduced from
+top levels — `top/silver/top.py` and `top/gold/top.py` — are reduced from
 upstream's `CoreTop` and `BeamRaceTop` and say so in their headers; the
 membrane, the instruments and their tests are original.
 

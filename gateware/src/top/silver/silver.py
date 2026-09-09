@@ -1,10 +1,10 @@
-# Lacuna -- a 2D membrane mesh whose hole is the instrument.
+# Silver -- a 2D membrane mesh whose hole is the instrument.
 #
 # Copyright (c) 2026 D. Baghurst
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
-# The membrane itself lives in mesh.py, shared with ORBITA. This file is what
+# The membrane itself lives in mesh.py, shared with Gold. This file is what
 # makes it an instrument you strike and listen to: the CV mapping, the pitch
 # table, the encoder, and two pickup nodes 45 degrees apart for the
 # stereo output.
@@ -41,6 +41,15 @@ from amaranth import *
 from amaranth.lib import data, stream, wiring
 from amaranth.lib.memory import Memory
 from amaranth.lib.wiring import In, Out
+
+import os
+import sys
+
+# mesh.py is the shared membrane and now lives beside this folder rather than in it.
+# Both instruments and their tests are run with only their own directory on sys.path,
+# so the sibling has to be added explicitly. Turning these into a package instead
+# would break the standalone tests, which import the modules directly.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mesh"))
 
 from mesh import (Mesh, PRESETS, PRESETS_BY_N, WIDTH, FRAC, LAM_FRAC, _raw)
 
@@ -79,10 +88,10 @@ def tuning_table(f_lo=F_LO):
     return out
 
 
-class Lacuna(wiring.Component):
+class Silver(wiring.Component):
 
     bitstream_help = BitstreamHelp(
-        brief="Lacuna: membrane mesh, hole is the instrument",
+        brief="Silver: membrane mesh, hole is the instrument",
         io_left=['strike', 'tension', 'position', 'geometry',
                  'mesh L', 'mesh R', '', ''],
         io_right=['preset', '', 'video (fixed)', '', '', '']

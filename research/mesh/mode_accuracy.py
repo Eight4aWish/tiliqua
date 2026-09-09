@@ -17,7 +17,7 @@ with f proportional to sqrt(-mu) in the low-tension limit.
 
 Worth knowing before reading the output: research/mesh/README.md's published
 accuracy table -- 0.6% worst case out to 9.4x the fundamental -- was measured
-at radius 30, which needs a 64x64 grid. LACUNA shipped at radius 14 on 32x32.
+at radius 30, which needs a 64x64 grid. Silver shipped at radius 14 on 32x32.
 
     python mode_accuracy.py
 """
@@ -108,5 +108,5 @@ def report(sizes):
 
 if __name__ == "__main__":
     report([(32, 14), (48, 22), (64, 30)])
-    print("\nR=14 is what LACUNA ships. R=30 is what research/mesh/README.md's")
+    print("\nR=14 is what Silver ships. R=30 is what research/mesh/README.md's")
     print("published accuracy table was measured on.")

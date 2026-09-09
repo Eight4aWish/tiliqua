@@ -1,9 +1,9 @@
-# ORBITA at 48×48 — the noise, and what it is not
+# Gold at 48×48 — the noise, and what it is not
 
 ## Closed, 7 September: it was not in the gateware
 
 The noise was **the external modulation source**. Bisecting the patch settled
-it in two moves: unplug in2 and in3 and ORBITA is clean at every preset and
+it in two moves: unplug in2 and in3 and Gold is clean at every preset and
 every radius; put a different, more stable source on in2 and it stays clean.
 The scan circle drawn on screen visibly jittered in and out with the original
 source patched, which is the same signal arriving at the display and the audio
@@ -26,7 +26,7 @@ file; re-deriving them costs a day.
 
 ## The symptom
 
-Reported by ear, 7 September, on ORBITA 48×48 with damping on in3:
+Reported by ear, 7 September, on Gold 48×48 with damping on in3:
 
 - A broadband noise floor about 25 dB below the partials — audible as static
 - **Across the whole range of in2**, not only at the extremes
@@ -35,7 +35,7 @@ Reported by ear, 7 September, on ORBITA 48×48 with damping on in3:
   moving the centre hole
 
 Measured from a Retrospective capture of the direct outputs (ch12/13 — the pair
-measuring +0.05 correlation, which is ORBITA's signature; ch6/7 at +0.71 is the
+measuring +0.05 correlation, which is Gold's signature; ch6/7 at +0.71 is the
 stereo mix bus and shows the same floor, so the noise is not the recording
 chain):
 
@@ -58,7 +58,7 @@ there was nothing up there to fold. That change appears to have bought nothing.
 | Drive accumulation with damping | The noise is damping-independent by ear. The mechanism requires it to scale with `LOSS_SHIFT` |
 | Mallet too small for the bigger membrane | 48×48 measures **smoother** than 32×32 at the same mallet — 93.2% neighbour agreement against 86.7%. Larger mallets (4, 5, 6) buy nothing: 92.7–93.2% |
 | Output clipping | 3 isolated samples ≥0.99 in 60 s, longest run **1 sample**, all at one instant. 39 samples of 2.6M exceed half scale |
-| Internal membrane saturation | Simulated with ORBITA's drone path at a 5 V gate: peak node 12–30% of full scale, **zero clamp events**, at both sizes and at `LOSS_SHIFT` 10 and 14 |
+| Internal membrane saturation | Simulated with Gold's drone path at a 5 V gate: peak node 12–30% of full scale, **zero clamp events**, at both sizes and at `LOSS_SHIFT` 10 and 14 |
 | 64 → 128 scan points | Measured identical roughness pickup at both counts, every radius, both sizes |
 
 ## Real, but does not fit the symptom
@@ -108,7 +108,7 @@ ships needs its timing report read, not assumed.
 
 The reasoning that made this look like the answer:
 
-Trying to build ORBITA at 32x32 for an A/B, all five seeds failed `sync`:
+Trying to build Gold at 32x32 for an A/B, all five seeds failed `sync`:
 55.9, 57.0, 58.0, 58.0, 59.3 MHz against 60.00. Consistent across seeds, so it
 is structural rather than placement luck -- and this is the *smaller* design.
 The 48x48 build currently flashed passed at 60.59, which is 1% margin, and now
@@ -153,7 +153,7 @@ and the correctly-addressed scan may simply expose what was always there.
 
 Neither caused the static, and both are worth having found.
 
-**LACUNA's decay ran off the end of its own table.** `base_loss` is derived
+**Silver's decay ran off the end of its own table.** `base_loss` is derived
 from the grid size and comes out at 14 for 48×48; the octave term adds one more
 on the bottom half of the pitch range, giving `loss_shift` 15. `LOSS_MAX` was
 14, so the eight-entry `Array` in `decay()` was indexed at 8 and returned zero —

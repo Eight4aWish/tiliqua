@@ -32,7 +32,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-INV_MU_FRAC = 10        # matches lacuna.py
+INV_MU_FRAC = 10        # matches silver.py
 
 # The shipped 32x32 table, as (outer, inner, square, slit, inv_mu_q).
 # Regenerating these exactly is the test that this file is right.

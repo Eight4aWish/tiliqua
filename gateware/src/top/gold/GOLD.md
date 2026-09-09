@@ -1,12 +1,12 @@
-# Orbita
+# Gold
 
 The membrane as a wavetable, not as a drum.
 
 ```bash
 cd gateware
 AMARANTH_nextpnr_opts="--timing-allow-fail --seed 6" \
-    pdm orbita build --modeline 1280x720p60
-pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
+    pdm gold build --modeline 1280x720p60
+pdm flash archive build/gold-r5/gold-<tag>-r5.tar.gz --slot <n>
 ```
 
 | jack | |
@@ -21,13 +21,13 @@ pdm flash archive build/orbita-r5/orbita-<tag>-r5.tar.gz --slot <n>
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
 Same eight presets and the same membrane as
-[LACUNA](../lacuna/LACUNA.md) — [`mesh.py`](../lacuna/mesh.py) is shared. The
+[Silver](../silver/SILVER.md) — [`mesh.py`](../silver/mesh.py) is shared. The
 difference is entirely in how it is driven.
 
 ## What it is
 
-LACUNA listens to the mesh: the membrane vibrates at audio rate and a pickup
-node is the output. ORBITA does the opposite. The membrane evolves *slowly* —
+Silver listens to the mesh: the membrane vibrates at audio rate and a pickup
+node is the output. Gold does the opposite. The membrane evolves *slowly* —
 one update every 64 audio samples — and a closed circular path through it is
 read at audio rate. The path's values are one cycle of a waveform and the scan
 rate is the pitch, so timbre and pitch are independent and a held note morphs.
@@ -53,11 +53,11 @@ from the 1D version.
 The membrane updates once every 64 samples: 1024 nodes at roughly a dozen
 cycles each, spread over 64 samples, is about 190 cycles of the 10,000 an
 STM32H7 has per sample. At 48×48 it is 2304 nodes, so about 430 — still
-comfortably inside one sample's budget. The scan adds ~30. ORBITA's arithmetic would fit on the
+comfortably inside one sample's budget. The scan adds ~30. Gold's arithmetic would fit on the
 Daisy next door with 97% of its budget spare, and the 1D ancestor is proof the
 platform is willing. What gateware buys *here* is the free display and living
-in the same file as LACUNA — not throughput. The throughput argument belongs to
-LACUNA at 48 kHz, and only above 32×32; see LACUNA.md's "Where it goes next".
+in the same file as Silver — not throughput. The throughput argument belongs to
+Silver at 48 kHz, and only above 32×32; see SILVER.md's "Where it goes next".
 
 The table length tracks the grid: 64 points at 32×32, 128 at 48×48. At 32×32
 and radius 10 the circumference is about 63 cells, so 64 points is close to one
@@ -104,7 +104,7 @@ The 17× spread is a property of the grid, not a constant — it widens to 26× 
 below hearing: `F_EVOLVE = 0.65`, and a held note morphs over about 1.5 s. A
 change of character rather than a fault.
 
-**A single-cell strike is a spatial white-noise generator.** ORBITA reads the
+**A single-cell strike is a spatial white-noise generator.** Gold reads the
 membrane's *shape*, so roughness in space is noise in the waveform. Measured by
 neighbouring cells agreeing in sign, where 50% is white noise:
 
@@ -178,18 +178,18 @@ to interpolate the angle, two to scale it by the radius and three to blend.
 
 ## Verification
 
-`python test_orbita.py`. Checks the circle ROM is actually circular, that a
+`python test_gold.py`. Checks the circle ROM is actually circular, that a
 pluck makes sound where silence preceded it, that the radius sweep behaves
 across the membrane, and that a held drive sustains rather than decaying.
 
-The membrane itself is covered by `test_lacuna.py`, which stays bit-exact —
-`mesh.py` is shared, so a change for ORBITA that breaks LACUNA's arithmetic
+The membrane itself is covered by `test_silver.py`, which stays bit-exact —
+`mesh.py` is shared, so a change for Gold that breaks Silver's arithmetic
 fails there.
 
 **Neither test checks timing.** The shared mesh means work done for one
 instrument can break the other's timing while every test still passes — the
-mallet added here for ORBITA left LACUNA at 57.65 MHz against a 60 MHz
-constraint, and it went unnoticed until LACUNA was next built two days later.
+mallet added here for Gold left Silver at 57.65 MHz against a 60 MHz
+constraint, and it went unnoticed until Silver was next built two days later.
 Build both after touching `mesh.py`, and re-check the seeds after anything that
 changes the design's size.
 
@@ -198,7 +198,7 @@ changes the design's size.
 - **λ² is a per-preset constant**, so there is no tension control. All four
   jacks are spoken for and this is the parameter that lost.
 - **The strike always enters at the inner edge.** The mesh supports a strike
-  position and ORBITA does not drive it, for the same reason.
+  position and Gold does not drive it, for the same reason.
 - **A finite table per revolution**, 64 points at 32×32 and 128 at 48×48. Above
   roughly 2 kHz at 64 points the table's own harmonics begin to fold, which is
   what doubling it was meant to push out to 4 kHz. Measuring the output

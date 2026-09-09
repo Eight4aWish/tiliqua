@@ -4,8 +4,8 @@
 #
 # SPDX-License-Identifier: CERN-OHL-S-2.0
 #
-# Shared by LACUNA, which listens to the membrane through two pickup nodes, and
-# by ORBITA, which evolves it slowly and scans circular paths through it as
+# Shared by Silver, which listens to the membrane through two pickup nodes, and
+# by Gold, which evolves it slowly and scans circular paths through it as
 # wavetables. Everything about how the membrane behaves lives here; everything
 # about what the CVs mean and what comes out lives in the top level.
 #
@@ -58,8 +58,8 @@ from amaranth.lib.wiring import In, Out
 WIDTH, FRAC = 24, 22
 # Range of the per-sample decay shift. A short range, so the shift is a mux
 # over constants rather than a barrel shifter.
-# LACUNA drives base_loss plus up to one more from its per-octave tracking, so
-# at 48x48 that reaches 15. ORBITA's CV spans 7..14. The union is 7..15, and
+# Silver drives base_loss plus up to one more from its per-octave tracking, so
+# at 48x48 that reaches 15. Gold's CV spans 7..14. The union is 7..15, and
 # getting this wrong is silent: an out-of-range Array index reads as zero, the
 # decay stops entirely, and the membrane runs away into feedback.
 LOSS_MIN, LOSS_MAX = 7, 15
@@ -88,7 +88,7 @@ PRESETS = [
 #
 # A bigger membrane is a lower one. The largest 1/-mu here is 88328 against
 # 36410, so the tension at which a wave would cross a cell per sample now
-# arrives at 582 Hz rather than 906, and lacuna.py drops the 1 V/oct range an
+# arrives at 582 Hz rather than 906, and silver.py drops the 1 V/oct range an
 # octave to suit. That is the physics of a wider drum, not a compromise.
 PRESETS_48 = [
     (22,  0, 0, 0,  88328),   # drum head
@@ -144,7 +144,7 @@ class Mesh(wiring.Component):
         # standalone tests, and any audio-only top level.
         self.video = video
         # `snapshot`: keep a 16-bit copy of the mesh readable from the audio
-        # domain. ORBITA scans a path through it at audio rate; the display
+        # domain. Gold scans a path through it at audio rate; the display
         # snapshot above is a separate, narrower memory in the `dvi` domain
         # because a BRAM has two ports and the writer already holds one.
         self.snapshot = snapshot
@@ -155,8 +155,8 @@ class Mesh(wiring.Component):
         # strike leaves neighbouring cells agreeing in sign 61% of the time,
         # which is spatial white noise; radius 3 takes it to 92%.
         #
-        # It matters far more for ORBITA, which reads the membrane's shape
-        # directly, than for LACUNA, which hears one point over time.
+        # It matters far more for Gold, which reads the membrane's shape
+        # directly, than for Silver, which hears one point over time.
         self.mallet = mallet
         self.presets = presets
         for outer, _, _, _, _ in presets:
@@ -173,7 +173,7 @@ class Mesh(wiring.Component):
             "lam2":       In(LAM_FRAC),
             # Held to LOSS_MIN..LOSS_MAX. A shift by a Signal is a barrel
             # shifter -- 24 possible amounts on a 28-bit value, in the middle of
-            # the per-node arithmetic -- and it cost ORBITA 6 MHz of a domain
+            # the per-node arithmetic -- and it cost Gold 6 MHz of a domain
             # that had none spare when in3 became a damping control. Bounded to
             # nine values it is a mux over nine constant shifts instead, and a
             # constant shift is free wiring.
@@ -492,7 +492,7 @@ class Mesh(wiring.Component):
         strike_hit = [Signal(name=f"strike_hit{i}") for i in range(L)]
         # adx/ady are registered: node offset -> add -> abs -> clamp -> square
         # lookup -> compare in one cycle left the sync domain at 60.6 MHz once
-        # ORBITA's scan shared the die. That puts the test a further stage on,
+        # Gold's scan shared the die. That puts the test a further stage on,
         # so the delay chain below is one shorter again.
         m.d.comb += sdy.eq(dy)
         m.d.sync += ady.eq(Mux(abs(sdy) > M, M + 1, abs(sdy)))
@@ -648,7 +648,7 @@ class Mesh(wiring.Component):
 
         # --- wide snapshot ------------------------------------------------
         # The same free copy as the display tap, but 16 bits and read from the
-        # audio domain: ORBITA indexes it with a circle ROM to scan a closed
+        # audio domain: Gold indexes it with a circle ROM to scan a closed
         # path through the membrane at audio rate. Cells outside the membrane
         # were written as 0, so a scan path that strays into the hole or past
         # the rim reads silence, which is the behaviour we want.
