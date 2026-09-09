@@ -24,8 +24,32 @@
 
 set -e
 
-SILVER_SEED=1
-GOLD_SEED=6
+# The released size. Silver needs two lanes to fit 2304 nodes into the 1250 cycles
+# a 48 kHz sample allows; Gold updates at 750 Hz and does not read MESH_LANES at
+# all. Set here rather than left to the code's default, which is 32 -- without
+# this the script cheerfully built a size that has never shipped.
+export MESH_N=${MESH_N:-48}
+export MESH_LANES=${MESH_LANES:-2}
+
+# Seeds verified at 48x48. Gold needs a different one per modeline: at 720x720
+# seed 2 closed with 0.85% margin, which is not enough to ship, and seed 4 gives
+# 4.9%.
+#
+# Gold at 1280x720 is the hard one, and worth knowing before you burn an evening
+# on it. Of eight seeds tried, ONE closed. The binding constraint is dvi_clk at
+# 74.25 MHz, and the design lands either side of it more or less at random --
+# 72.25, 73.12, 73.95, 74.15, 74.36, 76.38 across builds of identical RTL. The
+# 720x720 modeline only asks 39.07 MHz of the same clock, which is why that
+# variant closes on almost any seed.
+#
+# Re-check all four after ANY change, not just a change of size. Renaming the
+# bitstream is enough: the name is rendered into the video path, so "Gold" is a
+# different netlist from "ORBITA" and every seed verified before a rename is
+# void. That is how this list was invalidated.
+SILVER_SEED=4
+SILVER7_SEED=4
+GOLD_SEED=13
+GOLD7_SEED=4
 
 fail=0
 archives=()
@@ -68,8 +92,8 @@ build gold gold "$GOLD_SEED" 1280x720p60 --name Gold "$@"
 
 # 720x720p60r2 is the Waveshare panel. A cheap HDMI dongle will not accept it:
 # it is not a standard timing.
-build silver silver7 "$SILVER_SEED" 720x720p60r2 --name Silver7 "$@"
-build gold gold7 "$GOLD_SEED" 720x720p60r2 --name Gold7 "$@"
+build silver silver7 "$SILVER7_SEED" 720x720p60r2 --name Silver7 "$@"
+build gold gold7 "$GOLD7_SEED" 720x720p60r2 --name Gold7 "$@"
 
 echo "Archives from this run:"
 printf '  %s\n' "${archives[@]}"
