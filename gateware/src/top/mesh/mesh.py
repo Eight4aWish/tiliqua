@@ -511,6 +511,21 @@ class Mesh(wiring.Component):
         # One constant shift per allowed amount, selected by a mux. Yosys turns
         # each `>> k` into wiring; only the select costs anything.
         #
+        # THIS DAMPS EVERY MODE EQUALLY, AND THAT IS THE DESIGN. A real membrane
+        # loses its high partials first, and the reference model has that as
+        # `air_shift` -- but doing it properly needs the Laplacian of the
+        # velocity, i.e. a neighbour sum of u_prev as well as of u, which
+        # doubles the memory traffic per node. At 48x48 the scan already needs
+        # two lanes to fit 2304 nodes into 1250 cycles, so there is nothing to
+        # spend. (The cheap version -- pulling each node toward its neighbour
+        # average -- does not work: it damps broadband, 66 dB in half a second.)
+        #
+        # Musically it earns its place anyway. Because the decay is uniform the
+        # spectrum keeps its SHAPE all the way down instead of narrowing onto
+        # the fundamental, so a filter downstream has the same material to work
+        # on a second into the note as it does on the hit. The cost is that it
+        # rings more like a plate than a drum head.
+        #
         # The index is clamped as well as the range widened. This overflowed
         # once already and nothing caught it -- the tests drive tension values
         # that happen to land in range, and an out-of-bounds Array index is

@@ -28,12 +28,29 @@
 # given CV means the same note on every geometry. Without it the thin ring
 # sits two and a half octaves above the full disc.
 #
-# DAMPING TRACKS PITCH. loss_shift is a per-sample decay, so at low pitch a
-# cycle spans far more samples and the mode is over-damped. Left fixed it looks
-# exactly like a tuning error -- it was the entire apparent low-end pitch error
-# during development (+79% four octaves down), not dispersion. It tracks at half
-# a shift per octave rather than a full one: at a full shift the bottom octave
-# rang for 2.7 s against 0.34 s at the top, and dominated everything.
+# DAMPING TRACKS PITCH, BUT ONLY COARSELY. loss_shift is a per-sample decay, so
+# at low pitch a cycle spans far more samples and the mode is over-damped. Left
+# fixed it looks exactly like a tuning error -- it was the entire apparent
+# low-end pitch error during development (+79% four octaves down), not
+# dispersion.
+#
+# What the tracking below actually does, as opposed to what this comment used to
+# claim: `(OCTAVES - 1 - octave) >> 1` takes the values 1, 1, 0, 0 across the
+# four octaves, so loss_shift moves by exactly ONE step over the whole range and
+# steps at the midpoint. At 48x48 that is 15 below 110 Hz and 14 above it --
+# time constants of 0.68 s and 0.34 s.
+#
+# So decay-per-cycle still varies eightfold bottom to top; untracked it would be
+# sixteenfold. The comment here used to say "half a shift per octave", which over
+# four octaves would be 1.5 steps and is not what the expression computes.
+#
+# THE REMAINING EIGHTFOLD IS DELIBERATE, so do not "fix" it. Bottom-of-range ring
+# at 27.5 Hz for each option: no tracking 0.34 s (9 cycles), this 0.68 s (19),
+# a full shift per octave 2.73 s (75), constant-cycles 5.46 s (150). The full
+# shift was tried and rejected by ear -- the bottom octave dominated everything.
+# A 2.7 s sub-bass tail does not clear before the next hit below ~22 BPM, where
+# 0.68 s clears by ~88. A real drum's low end really does ring on for seconds;
+# an instrument that has to sit in a patch alongside other voices cannot.
 
 import math
 

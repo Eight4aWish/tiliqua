@@ -126,12 +126,34 @@ underneath them, and they are otherwise invisible controls.
 scaling only the neighbour sum does not lower pitch, it piles energy up at
 Nyquist. A nominal one-octave drop measured 10.5 kHz.
 
-**Damping has to track pitch.** `loss_shift` is a per-sample decay, so at low
-pitch a cycle spans far more samples and the mode is over-damped. Left fixed it
-looks exactly like a tuning error, and was the entire apparent low-end pitch
-error during development (+79% four octaves down) — not dispersion. It tracks at
-half a shift per octave; at a full shift the bottom octave rang for 2.7 s
-against 0.34 s at the top and dominated everything.
+**Damping has to track pitch, and only half does.** `loss_shift` is a per-sample
+decay, so at low pitch a cycle spans far more samples and the mode is
+over-damped. Left fixed it looks exactly like a tuning error, and was the entire
+apparent low-end pitch error during development (+79% four octaves down) — not
+dispersion.
+
+The tracking is `base_loss + ((OCTAVES - 1 - octave) >> 1)`, which takes the
+values 1, 1, 0, 0 across the four octaves: **one step over the whole range**,
+stepping at the midpoint. At 48×48 that is `loss_shift` 15 below 110 Hz and 14
+above, so τ = 0.68 s and 0.34 s. Decay-per-cycle still varies eightfold from
+bottom to top against sixteenfold untracked. This page previously said "half a
+shift per octave", which would be 1.5 steps over four octaves and is not what the
+expression computes.
+
+**The remaining eightfold is deliberate — do not "fix" it.** Bottom-of-range ring
+at 27.5 Hz, by option:
+
+| tracking | bottom τ | bottom cycles | verdict |
+|---|---|---|---|
+| none (14 flat) | 0.34 s | 9 | too choked |
+| **shipped (15/14)** | **0.68 s** | **19** | — |
+| full shift/octave (17→14) | 2.73 s | 75 | tried, rejected by ear |
+| constant cycles (18→14) | 5.46 s | 150 | never tried |
+
+The full shift was rejected because the bottom octave dominated everything. A
+2.7 s sub-bass tail does not clear before the next hit below ~22 BPM, where
+0.68 s clears by ~88. A real drum's low end does ring on for seconds; an
+instrument that has to sit in a patch alongside other voices cannot.
 
 **And then it walked off the end of its own table.** The decay is a mux over a
 fixed set of constant shifts, indexed by `loss_shift`. At 48×48 `base_loss` is
