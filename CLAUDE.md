@@ -21,7 +21,8 @@ thing to read.
 - **The mesh is shared, so build *both* instruments after touching it.** No test checks
   timing; regressions have only ever shown up in a build.
 - **Two video modes.** `1280x720p60` for capture cards and monitors, `720x720p60r2` only
-  for the round Waveshare panel — a cheap HDMI dongle will not lock to 720×720.
+  for the round Tiliqua Screen (TLQ-SCREEN) — a cheap HDMI dongle will not lock to 720×720.
+  It is that screen's own timing; nothing shows a Waveshare panel taking it.
 - **The board CAD is not in this repo.** Schematic PDFs only; the KiCad files are in
   [`apfaudio/tiliqua-hardware`](https://github.com/apfaudio/tiliqua-hardware).
 - **Limitations are design choices, not a to-do list.** Each instrument's doc separates
