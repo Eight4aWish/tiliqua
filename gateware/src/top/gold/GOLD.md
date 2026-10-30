@@ -17,7 +17,7 @@ pdm flash archive build/gold-r5/gold-<tag>-r5.tar.gz --slot <n>
 | in3 | damping — how long the surface holds its shape. Unipolar for a slider: 0 V rings for ever, 4.4 V is a thud, 0.68 V a step |
 | out0 | scan L — the circle in2 selects |
 | out1 | scan R — a quarter of the annulus further out |
-| GPDI | the membrane, both scan circles, and the left one unrolled |
+| GPDI | the membrane, both scan circles, and the left one unrolled; at 720×720, a quarter turn round for the Tiliqua Screen's panel |
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
 Same eight presets and the same membrane as

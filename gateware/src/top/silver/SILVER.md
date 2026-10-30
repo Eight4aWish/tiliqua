@@ -17,7 +17,7 @@ pdm flash archive build/silver-r5/silver-<tag>-r5.tar.gz --slot <n>
 | in3 | geometry — audio-rate modulation of the hole radius |
 | out0 | mesh L — pickup on the +y axis |
 | out1 | mesh R — 45° round, same radius |
-| GPDI | the membrane, drawn live |
+| GPDI | the membrane, drawn live; at 720×720, a quarter turn round for the Tiliqua Screen's panel |
 | encoder | short press cycles the preset; a 3 s hold still reboots |
 
 Eight presets: three solid drum heads (r14, r10, r7), then narrow hole, wide

@@ -65,6 +65,15 @@ def cell_shift(n, modeline):
     raise ValueError(f"a {n}x{n} mesh does not fit this modeline at any scale")
 
 
+# The Tiliqua Screen's panel is mounted a quarter turn round, so a picture
+# drawn in scan order shows on its side, the bottom of the frame on the right.
+# Upstream turns its framebuffer back for any fixed 720x720 mode (Rotate::Left
+# in rs/hal/src/dma_framebuffer.rs); with no framebuffer here, the beam's
+# position is turned instead.
+def rotated(modeline):
+    return (modeline.h_active, modeline.v_active) == (720, 720)
+
+
 class SilverTop(Elaboratable):
 
     def __init__(self, clock_settings):
@@ -122,11 +131,22 @@ class SilverTop(Elaboratable):
             f"a {n}x{n} mesh at {1 << shift}x does not fit this modeline")
 
         x, y = dvi_tgen.x, dvi_tgen.y
+        rotate = rotated(self.clock_settings.modeline)
+        last = self.clock_settings.modeline.h_active - 1
+
+        # Where the pixel k ahead of the beam falls in the upright picture.
+        # Rotated, the scanline runs up the picture: a column is fixed for the
+        # whole line and the row changes along it, the reverse of unrotated.
+        def beam(k):
+            if rotate:
+                return y, (last - k) - x
+            return x + k, y
 
         # The snapshot read is synchronous, so address it with the *next* pixel
         # and its data arrives in time to colour this one.
+        bx, by = beam(1)
         xn = Signal(signed(12))
-        m.d.comb += xn.eq(x + 1)
+        m.d.comb += xn.eq(bx)
         cx = Signal(range(n))
         cy = Signal(range(n))
         # cy*n + cx, not Cat(cx, cy): the concatenation is only the cell
@@ -140,10 +160,17 @@ class SilverTop(Elaboratable):
         # before the mesh starts, so the lag is never visible.
         row_base = Signal(range(n * n))
         cell = Signal(range(n * n))
-        m.d.dvi += row_base.eq(cy * n)
+        if rotate:
+            # The row now changes every `1 << shift` pixels along the line, so
+            # the lag would show. Register it from one pixel further ahead.
+            cy_ahead = Signal(range(n))
+            m.d.comb += cy_ahead.eq((beam(2)[1] - y0) >> shift)
+            m.d.dvi += row_base.eq(cy_ahead * n)
+        else:
+            m.d.dvi += row_base.eq(cy * n)
         m.d.comb += [
             cx.eq((xn - x0) >> shift),
-            cy.eq((y - y0) >> shift),
+            cy.eq((by - y0) >> shift),
             cell.eq(row_base + cx),
             core.disp_addr.eq(cell),
         ]
@@ -176,7 +203,7 @@ class SilverTop(Elaboratable):
         on_mesh = Signal()
         on_mesh_q = Signal()
         m.d.comb += on_mesh.eq((xn >= x0) & (xn < x0 + side) &
-                               (y >= y0) & (y < y0 + side))
+                               (by >= y0) & (by < y0 + side))
         m.d.dvi += on_mesh_q.eq(on_mesh)
 
         # Diverging palette. 0 is a cell outside the membrane and is drawn as a

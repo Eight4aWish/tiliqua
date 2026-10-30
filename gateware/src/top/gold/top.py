@@ -85,6 +85,15 @@ def wave_shift(points, side):
     return 0
 
 
+# The Tiliqua Screen's panel is mounted a quarter turn round, so a picture
+# drawn in scan order shows on its side, the waveform strip on the right.
+# Upstream turns its framebuffer back for any fixed 720x720 mode (Rotate::Left
+# in rs/hal/src/dma_framebuffer.rs); with no framebuffer here, the beam's
+# position is turned instead.
+def rotated(modeline):
+    return (modeline.h_active, modeline.v_active) == (720, 720)
+
+
 class GoldTop(Elaboratable):
 
     def __init__(self, clock_settings):
@@ -136,14 +145,26 @@ class GoldTop(Elaboratable):
             f"a {n}x{n} mesh at {1 << shift}x does not fit this modeline")
 
         x, y = dvi_tgen.x, dvi_tgen.y
+        rotate = rotated(self.clock_settings.modeline)
+        last = self.clock_settings.modeline.h_active - 1
+
+        # Where the pixel k ahead of the beam falls in the upright picture,
+        # less (ox, oy). Rotated, the scanline runs up the picture: a column is
+        # fixed for the whole line and the row changes along it, the reverse
+        # of unrotated.
+        def beam(k, ox=0, oy=0):
+            if rotate:
+                return y - ox, (last - k - oy) - x
+            return x + (k - ox), (y - oy) if oy else y
 
         # Two pipeline stages, so look two pixels ahead: the cell address is
         # registered (x -> subtract -> shift -> BRAM address in one cycle only
         # reached 68 MHz against 74.25) and the snapshot read is synchronous on
         # top of that. Everything else is delayed to match, so the picture is
         # not shifted.
+        bx, by = beam(2)
         xn = Signal(signed(12))
-        m.d.comb += xn.eq(x + 2)
+        m.d.comb += xn.eq(bx)
         cxc = Signal(range(n))
         cyc = Signal(range(n))
         # Fold the look-ahead into the offset: x + 2 then - x0 is two carry
@@ -157,10 +178,18 @@ class GoldTop(Elaboratable):
         # 74.25. row_base settles one pixel into each line, long before the
         # mesh area starts.
         row_base = Signal(range(n * n))
-        m.d.dvi += row_base.eq(cyc * n)
+        if rotate:
+            # The row now changes every `1 << shift` pixels along the line, so
+            # the lag would show. Register it from one pixel further ahead.
+            cyc_ahead = Signal(range(n))
+            m.d.comb += cyc_ahead.eq(beam(3, x0, y0)[1] >> shift)
+            m.d.dvi += row_base.eq(cyc_ahead * n)
+        else:
+            m.d.dvi += row_base.eq(cyc * n)
+        cx2, cy2 = beam(2, x0, y0)
         m.d.comb += [
-            cxc.eq((x + (2 - x0)) >> shift),
-            cyc.eq((y - y0) >> shift),
+            cxc.eq(cx2 >> shift),
+            cyc.eq(cy2 >> shift),
         ]
         m.d.dvi += core.disp_addr.eq(row_base + cxc)
 
@@ -177,7 +206,7 @@ class GoldTop(Elaboratable):
         strip_h = self.clock_settings.modeline.v_active - strip_y0 - 8
         assert strip_h >= 32, "no room under the mesh for the waveform strip"
         strip_cy = strip_y0 + strip_h // 2
-        m.d.dvi += core.wave_addr.eq((x + (2 - sx0)) >> wsh)
+        m.d.dvi += core.wave_addr.eq(beam(2, sx0)[0] >> wsh)
 
         # Kept narrow deliberately: the row offset within the strip needs 8
         # bits, not the 12 of a raw pixel coordinate, and carrying the wide
@@ -191,9 +220,9 @@ class GoldTop(Elaboratable):
         in_strip_1 = Signal()
         in_strip_q = Signal()
         m.d.comb += [
-            ys.eq(y - strip_y0),
+            ys.eq(beam(2, 0, strip_y0)[1]),
             in_strip.eq((xn >= sx0) & (xn < sx0 + strip_w) &
-                        (y >= strip_y0) & (y < strip_y0 + strip_h)),
+                        (by >= strip_y0) & (by < strip_y0 + strip_h)),
         ]
         m.d.dvi += [
             ys_1.eq(ys), ys_q.eq(ys_1),
@@ -213,7 +242,7 @@ class GoldTop(Elaboratable):
         on_mesh_1 = Signal()
         on_mesh_q = Signal()
         m.d.comb += on_mesh.eq((xn >= x0) & (xn < x0 + side) &
-                               (y >= y0) & (y < y0 + side))
+                               (by >= y0) & (by < y0 + side))
         m.d.dvi += [on_mesh_1.eq(on_mesh), on_mesh_q.eq(on_mesh_1)]
 
         # --- scan circle overlay ----------------------------------------------

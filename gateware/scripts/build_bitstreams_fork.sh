@@ -31,9 +31,10 @@ set -e
 export MESH_N=${MESH_N:-48}
 export MESH_LANES=${MESH_LANES:-2}
 
-# Seeds verified at 48x48. Gold needs a different one per modeline: at 720x720
-# seed 2 closed with 0.85% margin, which is not enough to ship, and seed 4 gives
-# 4.9%.
+# Seeds verified at 48x48. Gold needs a different one per modeline. At 720x720
+# seed 4 gave 4.9% until the quarter turn for the Tiliqua Screen went in
+# (2026-10-30), then missed at 57.56 MHz. Of seeds 1-17 since, 6 is the best at
+# 62.06 MHz (3.4%); 15, 17, 7 and 5 also close, 2 by only 0.05 MHz.
 #
 # Gold at 1280x720 is the hard one, and worth knowing before you burn an evening
 # on it. Of eight seeds tried, ONE closed. The binding constraint is dvi_clk at
@@ -49,7 +50,7 @@ export MESH_LANES=${MESH_LANES:-2}
 SILVER_SEED=4
 SILVER7_SEED=4
 GOLD_SEED=13
-GOLD7_SEED=4
+GOLD7_SEED=6
 
 fail=0
 archives=()
@@ -90,8 +91,9 @@ build () {                       # build <bitstream> <outdir> <seed> <modeline> 
 build silver silver "$SILVER_SEED" 1280x720p60 --name Silver "$@"
 build gold gold "$GOLD_SEED" 1280x720p60 --name Gold "$@"
 
-# 720x720p60r2 is the Waveshare panel. A cheap HDMI dongle will not accept it:
-# it is not a standard timing.
+# 720x720p60r2 is the Tiliqua Screen's timing, and these builds draw a quarter
+# turn round to suit its panel. A cheap HDMI dongle will not accept it: it is
+# not a standard timing.
 build silver silver7 "$SILVER7_SEED" 720x720p60r2 --name Silver7 "$@"
 build gold gold7 "$GOLD7_SEED" 720x720p60r2 --name Gold7 "$@"
 
