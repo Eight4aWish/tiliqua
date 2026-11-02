@@ -124,8 +124,8 @@ rather than by editing upstream's `cli.py`, which would be a standing rebase
 conflict. Re-check it after any change of size.
 
 Two video modes are built: `1280x720p60` for a capture card, `720x720p60r2` for
-the Waveshare panel. A cheap HDMI capture dongle will not lock to 720×720 — it
-is not a standard timing.
+the round Tiliqua Screen (TLQ-SCREEN), whose own timing it is. A cheap HDMI
+capture dongle will not lock to 720×720 — it is not a standard timing.
 
 ## Testing
 
