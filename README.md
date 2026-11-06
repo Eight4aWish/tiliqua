@@ -1,3 +1,5 @@
+> **This is Eight4aWish's fork of [apfaudio/tiliqua](https://github.com/apfaudio/tiliqua).** It adds [Silver](gateware/src/top/silver/SILVER.md) and [Gold](gateware/src/top/gold/GOLD.md), two bitstream instruments: a stereo struck drum head and a stereo scanned wavetable, sharing a 2D mesh base. The downloads, the video and how to flash them are on [eight4awish.com](https://eight4awish.com/modules/tiliqua/). They aren't made or supported by apf.audio. Everything below is the upstream README.
+
 # Tiliqua
 
 **Tiliqua is a powerful, open hardware FPGA-based audio multitool for Eurorack.** It looks like this:
