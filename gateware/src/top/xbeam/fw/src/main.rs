@@ -32,6 +32,127 @@ use tiliqua_hal::persist::Persist;
 
 pub const TICK_PERIOD_MS: u32 = 5;
 
+/// Auto trigger: how often it re-reads the ch0 meter (ticks), how many of
+/// those windows the level tracks (3 s, long enough for slow LFOs), the
+/// smallest swing it will trigger on (counts, 4 per mV), and how many
+/// updates in a row must agree before the timebase changes.
+const AUTO_UPDATE_TICKS: u32 = 100 / TICK_PERIOD_MS;
+const AUTO_WINDOWS: usize = 30;
+const AUTO_MIN_SWING: i32 = 40;
+const AUTO_TB_AGREE: u8 = 3;
+
+/// Fastest first, so the first one whose sweep holds two periods is the
+/// tightest view: 2 to 5 cycles on screen with 1-2-5 steps.
+const TIMEBASES_FAST_FIRST: [Timebase; 13] = [
+    Timebase::Timebase50us, Timebase::Timebase100us, Timebase::Timebase200us,
+    Timebase::Timebase500us, Timebase::Timebase1ms, Timebase::Timebase2ms,
+    Timebase::Timebase5ms, Timebase::Timebase10ms, Timebase::Timebase20ms,
+    Timebase::Timebase50ms, Timebase::Timebase100ms, Timebase::Timebase200ms,
+    Timebase::Timebase500ms,
+];
+
+/// State for `TriggerMode::Auto`. The gateware measures ch0 (min, max, and
+/// samples between triggers); this turns that into a trigger level halfway
+/// up the swing, a hysteresis band of half the swing, and a timebase.
+struct AutoTrigger {
+    win_min: [i32; AUTO_WINDOWS],
+    win_max: [i32; AUTO_WINDOWS],
+    win_idx: usize,
+    last_update: u32,
+    last_count: u16,
+    last_trig_tick: u32,
+    period_us: Option<u64>,
+    pending_tb: Option<Timebase>,
+    pending_n: u8,
+    hyst: i16,
+    free_run: bool,
+}
+
+impl AutoTrigger {
+    fn new() -> Self {
+        Self {
+            win_min: [i32::MAX; AUTO_WINDOWS],
+            win_max: [i32::MIN; AUTO_WINDOWS],
+            win_idx: 0,
+            last_update: 0,
+            last_count: 0,
+            last_trig_tick: 0,
+            period_us: None,
+            pending_tb: None,
+            pending_n: 0,
+            hyst: 0,
+            free_run: true,
+        }
+    }
+
+    /// Returns the (trigger level, timebase) to show and use, if it has one.
+    fn update(&mut self, now: u32, scope: &mut Scope0, current_tb: Timebase)
+        -> Option<(i16, Timebase)>
+    {
+        if now.wrapping_sub(self.last_update) < AUTO_UPDATE_TICKS {
+            return None;
+        }
+        self.last_update = now;
+
+        let (mn, mx) = scope.meter_min_max();
+        scope.meter_clear();
+        self.win_min[self.win_idx] = mn;
+        self.win_max[self.win_idx] = mx;
+        self.win_idx = (self.win_idx + 1) % AUTO_WINDOWS;
+
+        let (per, cnt) = scope.meter_period();
+        if cnt != self.last_count {
+            self.last_count = cnt;
+            self.last_trig_tick = now;
+            if per > 0 {
+                self.period_us = Some(u64::from(per) * 1_000_000 / u64::from(scope.fs_up()));
+            }
+        }
+
+        let lo = *self.win_min.iter().min().unwrap_or(&i32::MAX);
+        let hi = *self.win_max.iter().max().unwrap_or(&i32::MIN);
+        if lo > hi || hi - lo < AUTO_MIN_SWING {
+            // Nothing there to trigger on: free-run, like a bench scope's auto.
+            self.free_run = true;
+            self.hyst = 0;
+            return None;
+        }
+
+        let level = ((lo + hi) / 2).clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        self.hyst = ((hi - lo) / 4).clamp(1, i32::from(i16::MAX)) as i16;
+
+        let mut tb = current_tb;
+        if let Some(p) = self.period_us {
+            let want = TIMEBASES_FAST_FIRST.iter()
+                .copied()
+                .find(|t| scope.sweep_us(*t) >= 2 * p)
+                .unwrap_or(Timebase::Timebase500ms);
+            if want == current_tb {
+                self.pending_tb = None;
+                self.pending_n = 0;
+            } else if self.pending_tb == Some(want) {
+                self.pending_n += 1;
+                if self.pending_n >= AUTO_TB_AGREE {
+                    tb = want;
+                    self.pending_tb = None;
+                    self.pending_n = 0;
+                }
+            } else {
+                self.pending_tb = Some(want);
+                self.pending_n = 1;
+            }
+        }
+
+        // No trigger for twice the longer of a sweep and a period (and at
+        // least 300 ms): free-run until crossings come back.
+        let wait_us = 2 * scope.sweep_us(tb).max(self.period_us.unwrap_or(0)).max(150_000);
+        let waited_us = u64::from(now.wrapping_sub(self.last_trig_tick)) * u64::from(TICK_PERIOD_MS) * 1000;
+        self.free_run = waited_us > wait_us;
+
+        Some((level, tb))
+    }
+}
+
 fn global_index(opts: &Opts, opt: &dyn OptionTrait) -> usize {
     let key = opt.key().value();
     opts.all().enumerate()
@@ -98,6 +219,7 @@ struct App {
     ui: Ui,
     cc_mapper: MidiCcMapper,
     xbeam: pac::XBEAM_PERIPH,
+    ticks: u32,
 }
 
 impl App {
@@ -107,6 +229,7 @@ impl App {
             ui,
             cc_mapper,
             xbeam,
+            ticks: 0,
         }
     }
 }
@@ -114,6 +237,7 @@ impl App {
 fn tick_handler(app: &Mutex<RefCell<App>>) {
     critical_section::with(|cs| {
         let mut app = app.borrow_ref_mut(cs);
+        app.ticks = app.ticks.wrapping_add(1);
         app.ui.update();
 
         // Check for TRS MIDI CC traffic
@@ -215,6 +339,7 @@ fn main() -> ! {
         let mut scope = Scope0::new(peripherals.SCOPE_PERIPH, 6);
         let overlay_periph = peripherals.OVERLAY_PERIPH;
         let mut first = true;
+        let mut auto_trig = AutoTrigger::new();
 
         let mut usb_cc_attached = false;
 
@@ -231,11 +356,11 @@ fn main() -> ! {
             let h_active = display.size().width;
             let v_active = display.size().height;
 
-            let (opts, draw_options, save_opts, wipe_opts) = critical_section::with(|cs| {
+            let (opts, draw_options, save_opts, wipe_opts, now) = critical_section::with(|cs| {
                 let mut app = app.borrow_ref_mut(cs);
                 let save_opts = app.ui.opts.misc.save_opts.poll();
                 let wipe_opts = app.ui.opts.misc.wipe_opts.poll();
-                (app.ui.opts.clone(), app.ui.draw(), save_opts, wipe_opts)
+                (app.ui.opts.clone(), app.ui.draw(), save_opts, wipe_opts, app.ticks)
             });
 
             let on_help_page = opts.tracker.page.value == Page::Help;
@@ -312,6 +437,23 @@ fn main() -> ! {
             };
             scope.set_xscale(xscale_bits);
             scope.set_timebase(opts.scope2.timebase.value);
+
+            // Auto: follow ch0, and write the level and timebase it picks
+            // back into the menu, so they show and become the starting point
+            // if you switch to `rising`.
+            let auto = opts.scope2.trig_mode.value == TriggerMode::Auto;
+            if auto {
+                if let Some((level, tb)) = auto_trig.update(now, &mut scope, opts.scope2.timebase.value) {
+                    critical_section::with(|cs| {
+                        let mut app = app.borrow_ref_mut(cs);
+                        app.ui.opts.scope2.trig_lvl.value = level;
+                        app.ui.opts.scope2.timebase.value = tb;
+                    });
+                }
+                scope.set_trigger_hyst(auto_trig.hyst);
+            } else {
+                scope.set_trigger_hyst(0);
+            }
             let (sppd_x, sppd) = scope.pixels_per_div();
             let n_ch = opts.scope1.n_channels.value;
             let ypos = [opts.scope1.ypos0.value, opts.scope1.ypos1.value,
@@ -402,7 +544,8 @@ fn main() -> ! {
                 scope.set_enabled(false, false);
                 vscope.set_enabled(true);
             } else {
-                scope.set_enabled(true, opts.scope2.trig_mode.value == TriggerMode::Always);
+                scope.set_enabled(true, opts.scope2.trig_mode.value == TriggerMode::Always
+                                        || (auto && auto_trig.free_run));
                 vscope.set_enabled(false);
             }
 

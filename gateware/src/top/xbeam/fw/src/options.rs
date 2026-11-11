@@ -22,9 +22,12 @@ pub enum Page {
 #[derive(Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr, Serialize, Deserialize)]
 #[strum(serialize_all = "kebab-case")]
 pub enum TriggerMode {
-    #[default]
     Always,
     Rising,
+    /// Rising on ch0, with the level, hysteresis and timebase following the
+    /// signal: 2-5 cycles on screen, free-running when nothing crosses.
+    #[default]
+    Auto,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr, Serialize, Deserialize)]

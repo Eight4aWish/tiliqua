@@ -113,6 +113,55 @@ class VectorPeripheral(wiring.Component):
 
         return m
 
+
+class SchmittTrigger(wiring.Component):
+
+    """
+    Rising-edge trigger with hysteresis: arms once the sample falls below
+    ``threshold - hysteresis``, fires on the first sample at or above
+    ``threshold + hysteresis``, then disarms. With ``hysteresis`` at zero
+    this fires exactly where :class:`tiliqua.dsp.Trigger` does.
+
+    The band stops noise and the extra crossings of a harmonic-rich wave
+    near the threshold from re-triggering the sweep.
+    """
+
+    def __init__(self, shape):
+        self.shape = shape
+        super().__init__({
+            "i": In(stream.Signature(data.StructLayout({
+                "sample":     shape,
+                "threshold":  shape,
+                "hysteresis": shape,
+            }))),
+            "o": Out(stream.Signature(unsigned(1))),
+        })
+
+    def elaborate(self, platform):
+        m = Module()
+
+        armed  = Signal()
+        sample = self.i.payload.sample.as_value()
+        lo     = self.i.payload.threshold.as_value() - self.i.payload.hysteresis.as_value()
+        hi     = self.i.payload.threshold.as_value() + self.i.payload.hysteresis.as_value()
+        fire   = Signal()
+
+        m.d.comb += [
+            fire.eq(armed & (sample >= hi)),
+            self.o.valid.eq(self.i.valid),
+            self.i.ready.eq(self.o.ready),
+            self.o.payload.eq(fire),
+        ]
+
+        with m.If(self.i.valid & self.o.ready):
+            with m.If(sample < lo):
+                m.d.sync += armed.eq(1)
+            with m.Elif(fire):
+                m.d.sync += armed.eq(0)
+
+        return m
+
+
 class ScopePeripheral(wiring.Component):
 
     class Flags(csr.Register, access="w"):
@@ -149,6 +198,25 @@ class ScopePeripheral(wiring.Component):
     class Fs(csr.Register, access="r"):
         fs: csr.Field(csr.action.R, unsigned(32))
 
+    # Channel 0 measurements, for the firmware's auto trigger level and
+    # timebase. Levels read back in the same units ``trigger_lvl`` takes
+    # (PSQ_BASE_FBITS fractional bits, 4 counts per mV).
+
+    class TriggerHyst(csr.Register, access="w"):
+        trigger_hyst: csr.Field(csr.action.W, unsigned(16))
+
+    class MeterCtrl(csr.Register, access="w"):
+        clear: csr.Field(csr.action.W, unsigned(1))  # restart the min/max window
+
+    class MeterLevel(csr.Register, access="r"):
+        level: csr.Field(csr.action.R, signed(32))
+
+    class MeterPeriod(csr.Register, access="r"):
+        samples: csr.Field(csr.action.R, unsigned(32))  # between the last two triggers, at fs
+
+    class MeterCount(csr.Register, access="r"):
+        count: csr.Field(csr.action.R, unsigned(16))  # triggers so far, wrapping
+
     def __init__(self, n_channels=4, fs=48000):
 
         self.fs = fs
@@ -156,11 +224,11 @@ class ScopePeripheral(wiring.Component):
         self.strokes = [Stroke()
                         for _ in range(self.n_channels)]
 
-        regs = csr.Builder(addr_width=6, data_width=8)
+        regs = csr.Builder(addr_width=7, data_width=8)
         self._flags          = regs.add("flags",          self.Flags(),         offset=0x0)
         self._hue            = regs.add("hue",            self.Hue(),           offset=0x4)
         self._intensity      = regs.add("intensity",      self.Intensity(),     offset=0x8)
-        self._timebase       = regs.add("timebase",       self.Timebase(),      offset=0xC)
+        self._timebase      = regs.add("timebase",       self.Timebase(),      offset=0xC)
         self._xscale         = regs.add("xscale",         self.XScale(),        offset=0x10)
         self._yscale         = regs.add("yscale",         self.YScale(),        offset=0x14)
         self._trigger_lvl    = regs.add("trigger_lvl",    self.TriggerLevel(),  offset=0x18)
@@ -169,6 +237,12 @@ class ScopePeripheral(wiring.Component):
                                 offset=(0x20+i*4)) for i in range(self.n_channels)]
         self._pixels_per_volt = regs.add("pixels_per_volt", self.PixelsPerVolt(), offset=0x30)
         self._fs              = regs.add("fs",              self.Fs(),             offset=0x34)
+        self._trigger_hyst    = regs.add("trigger_hyst",    self.TriggerHyst(),    offset=0x38)
+        self._meter_ctrl      = regs.add("meter_ctrl",      self.MeterCtrl(),      offset=0x3C)
+        self._meter_min       = regs.add("meter_min",       self.MeterLevel(),     offset=0x40)
+        self._meter_max       = regs.add("meter_max",       self.MeterLevel(),     offset=0x44)
+        self._meter_period    = regs.add("meter_period",    self.MeterPeriod(),    offset=0x48)
+        self._meter_count     = regs.add("meter_count",     self.MeterCount(),     offset=0x4C)
 
         self._bridge = csr.Bridge(regs.as_memory_map())
         super().__init__({
@@ -185,6 +259,7 @@ class ScopePeripheral(wiring.Component):
         m = Module()
 
         trigger_lvl = Signal(shape=PSQ)
+        trigger_hyst = Signal(shape=PSQ)
         trigger_always = Signal()
 
         self.isplit4 = dsp.Split(self.n_channels, shape=PSQ)
@@ -211,14 +286,52 @@ class ScopePeripheral(wiring.Component):
         m.submodules.irep2 = irep2 = dsp.Split(2, replicate=True, source=self.isplit4.o[0], shape=PSQ)
 
         # Send one copy to trigger => ramp => X
-        m.submodules.trig = trig = dsp.Trigger(shape=PSQ)
+        m.submodules.trig = trig = SchmittTrigger(shape=PSQ)
         m.submodules.ramp = ramp = dsp.Ramp(shape=PSQ)
         timebase = Signal(shape=dsp.Ramp.TIMEBASE_SQ)
         # Audio => Trigger
         dsp.connect_remap(m, irep2.o[0], trig.i, lambda o, i: [
             i.payload.sample.eq(o.payload),
             i.payload.threshold.eq(trigger_lvl),
+            i.payload.hysteresis.eq(trigger_hyst),
         ])
+
+        # Channel 0 meter: min/max since the last clear, and the samples
+        # between successive triggers. It watches the trigger's input
+        # stream, so it measures exactly what the sweep triggers on.
+        psq_raw   = trig.i.payload.sample.as_value()
+        psq_w     = len(psq_raw)
+        level_shift = PSQ_BASE_FBITS - PSQ.f_bits
+        meter_min = Signal(signed(psq_w), init=(1 << (psq_w - 1)) - 1)
+        meter_max = Signal(signed(psq_w), init=-(1 << (psq_w - 1)))
+        meter_ctr = Signal(32)
+        meter_per = Signal(32)
+        meter_cnt = Signal(16)
+        with m.If(self._meter_ctrl.f.clear.w_stb & self._meter_ctrl.f.clear.w_data):
+            m.d.sync += [
+                meter_min.eq((1 << (psq_w - 1)) - 1),
+                meter_max.eq(-(1 << (psq_w - 1))),
+            ]
+        with m.Elif(trig.i.valid & trig.i.ready):
+            with m.If(psq_raw < meter_min):
+                m.d.sync += meter_min.eq(psq_raw)
+            with m.If(psq_raw > meter_max):
+                m.d.sync += meter_max.eq(psq_raw)
+        with m.If(trig.i.valid & trig.i.ready):
+            with m.If(trig.o.payload):
+                m.d.sync += [
+                    meter_per.eq(meter_ctr + 1),
+                    meter_ctr.eq(0),
+                    meter_cnt.eq(meter_cnt + 1),
+                ]
+            with m.Elif(meter_ctr != 0xFFFF_FFFF):
+                m.d.sync += meter_ctr.eq(meter_ctr + 1)
+        m.d.comb += [
+            self._meter_min.f.level.r_data.eq(meter_min << level_shift),
+            self._meter_max.f.level.r_data.eq(meter_max << level_shift),
+            self._meter_period.f.samples.r_data.eq(meter_per),
+            self._meter_count.f.count.r_data.eq(meter_cnt),
+        ]
         # Trigger => Ramp
         dsp.connect_remap(m, trig.o, ramp.i, lambda o, i: [
             i.payload.trigger.eq(o.payload | trigger_always),
@@ -274,6 +387,10 @@ class ScopePeripheral(wiring.Component):
         with m.If(self._trigger_lvl.f.trigger_level.w_stb):
             m.d.sync += trigger_lvl.as_value().eq(
                 self._trigger_lvl.f.trigger_level.w_data.as_signed() >> (PSQ_BASE_FBITS - PSQ.f_bits))
+
+        with m.If(self._trigger_hyst.f.trigger_hyst.w_stb):
+            m.d.sync += trigger_hyst.as_value().eq(
+                self._trigger_hyst.f.trigger_hyst.w_data.as_signed() >> (PSQ_BASE_FBITS - PSQ.f_bits))
 
         with m.If(self._xpos.f.xpos.w_stb):
             for s in self.strokes:

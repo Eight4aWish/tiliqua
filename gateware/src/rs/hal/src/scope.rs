@@ -66,6 +66,46 @@ macro_rules! impl_scope {
                 self.registers.xpos().write(|w| unsafe { w.xpos().bits(pos as u16) });
             }
 
+            /// Trigger hysteresis, in `set_trigger_level` units. 0 is the original
+            /// single-threshold trigger.
+            pub fn set_trigger_hyst(&mut self, hyst: i16) {
+                self.registers.trigger_hyst().write(|w| unsafe { w.trigger_hyst().bits(hyst as u16) });
+            }
+
+            /// Channel 0 lowest and highest sample since the last `meter_clear`,
+            /// in `set_trigger_level` units. Returns (i32::MAX, i32::MIN)-ish
+            /// sentinels if nothing arrived since the clear.
+            pub fn meter_min_max(&self) -> (i32, i32) {
+                (self.registers.meter_min().read().level().bits() as i32,
+                 self.registers.meter_max().read().level().bits() as i32)
+            }
+
+            pub fn meter_clear(&mut self) {
+                self.registers.meter_ctrl().write(|w| w.clear().bit(true));
+            }
+
+            /// (samples between the last two triggers, triggers so far wrapping at 2^16).
+            /// Samples are at `fs_up()`.
+            pub fn meter_period(&self) -> (u32, u16) {
+                (self.registers.meter_period().read().samples().bits(),
+                 self.registers.meter_count().read().count().bits())
+            }
+
+            /// Rate of the stream the scope plots (audio rate times the upsampling).
+            pub fn fs_up(&self) -> u32 {
+                self.fs_up
+            }
+
+            /// Length in microseconds of one full sweep at timebase `tb`,
+            /// at the current x scale. Follows `dsp.Ramp`: the beam steps
+            /// `timebase` per sample over a span of about 2^31 register units.
+            pub fn sweep_us(&self, tb: tiliqua_lib::scope::Timebase) -> u64 {
+                let numer: u64 = (self.px_div_x as u64) * (1u64 << (15 + self.xscale as u32));
+                let raw = (numer * 1_000_000 / (self.fs_up as u64 * tb.t_div_us())).max(1);
+                let samples = (1u64 << 31) / raw;
+                samples * 1_000_000 / self.fs_up as u64
+            }
+
             pub fn set_enabled(&mut self, enabled: bool, trigger_always: bool) {
                 self.registers.flags().write(|w| {
                     w.enable().bit(enabled);

@@ -9,7 +9,12 @@ Vectorscope/oscilloscope with menu system, USB audio and tunable delay lines.
       CRT, with adjustable beam settings, scale and offset for each channel.
 
     - In **oscilloscope mode**, all 4 input channels are plotted simultaneosly
-      with adjustable timebase, trigger settings and so on.
+      with adjustable timebase, trigger settings and so on. With
+      ``trig-mode=auto`` (the default) the scope follows channel 0: the
+      trigger level sits halfway up its swing with a hysteresis band of half
+      the swing, and the timebase steps so 2 to 5 cycles fill the screen, so
+      a cycling CV or an audio wave stays put. Both choices show in the menu.
+      With nothing crossing, it free-runs.
 
 The channels are assigned as follows:
 
@@ -129,7 +134,7 @@ can also be used to control most of these through CCs as follows:
         SCOPE2  yscale        70  vertical volts/div
         SCOPE2  timebase      71  horizontal time/div
         SCOPE2  xzoom         72  horizontal zoom
-        SCOPE2  trig-mode     73  trigger mode
+        SCOPE2  trig-mode     73  trigger mode (always/rising/auto)
         SCOPE2  trig-lvl      74  trigger level
         SCOPE2  intensity     75  trace intensity
         SCOPE2  hue           76  trace color
