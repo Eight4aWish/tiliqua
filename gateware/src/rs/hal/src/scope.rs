@@ -80,6 +80,12 @@ macro_rules! impl_scope {
                  self.registers.meter_max().read().level().bits() as i32)
             }
 
+            /// Ignore triggers within `samples` (at `fs_up()`) of the last one
+            /// that counted. 0 turns holdoff off.
+            pub fn set_holdoff(&mut self, samples: u32) {
+                self.registers.holdoff().write(|w| unsafe { w.samples().bits(samples) });
+            }
+
             pub fn meter_clear(&mut self) {
                 self.registers.meter_ctrl().write(|w| w.clear().bit(true));
             }
@@ -89,6 +95,13 @@ macro_rules! impl_scope {
             pub fn meter_period(&self) -> (u32, u16) {
                 (self.registers.meter_period().read().samples().bits(),
                  self.registers.meter_count().read().count().bits())
+            }
+
+            /// Shortest and longest trigger interval since `meter_clear`, in
+            /// samples at `fs_up()`. (u32::MAX, 0) if fewer than one interval.
+            pub fn meter_intervals(&self) -> (u32, u32) {
+                (self.registers.meter_imin().read().samples().bits(),
+                 self.registers.meter_imax().read().samples().bits())
             }
 
             /// Rate of the stream the scope plots (audio rate times the upsampling).

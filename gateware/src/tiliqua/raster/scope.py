@@ -217,6 +217,9 @@ class ScopePeripheral(wiring.Component):
     class MeterCount(csr.Register, access="r"):
         count: csr.Field(csr.action.R, unsigned(16))  # triggers so far, wrapping
 
+    class Holdoff(csr.Register, access="w"):
+        samples: csr.Field(csr.action.W, unsigned(32))  # ignore triggers this soon after the last, at fs
+
     def __init__(self, n_channels=4, fs=48000):
 
         self.fs = fs
@@ -243,6 +246,9 @@ class ScopePeripheral(wiring.Component):
         self._meter_max       = regs.add("meter_max",       self.MeterLevel(),     offset=0x44)
         self._meter_period    = regs.add("meter_period",    self.MeterPeriod(),    offset=0x48)
         self._meter_count     = regs.add("meter_count",     self.MeterCount(),     offset=0x4C)
+        self._holdoff         = regs.add("holdoff",         self.Holdoff(),        offset=0x50)
+        self._meter_imin      = regs.add("meter_imin",      self.MeterPeriod(),    offset=0x54)
+        self._meter_imax      = regs.add("meter_imax",      self.MeterPeriod(),    offset=0x58)
 
         self._bridge = csr.Bridge(regs.as_memory_map())
         super().__init__({
@@ -296,6 +302,17 @@ class ScopePeripheral(wiring.Component):
             i.payload.hysteresis.eq(trigger_hyst),
         ])
 
+        # Holdoff: a trigger only counts once `holdoff` samples have passed
+        # since the last one that did. Set to most of a period, it makes a
+        # wave that crosses the level several times per cycle (wavefolded,
+        # harmonic-rich) trigger on the same crossing every cycle. 0 = off.
+        # `holdoff_ok` is registered: the counter only moves once per sample,
+        # dozens of clocks apart, so a cycle late is still on time.
+        holdoff    = Signal(32)
+        holdoff_ok = Signal(init=1)
+        trig_fire  = Signal()
+        m.d.comb += trig_fire.eq(trig.o.payload & holdoff_ok)
+
         # Channel 0 meter: min/max since the last clear, and the samples
         # between successive triggers. It watches the trigger's input
         # stream, so it measures exactly what the sweep triggers on.
@@ -307,23 +324,38 @@ class ScopePeripheral(wiring.Component):
         meter_ctr = Signal(32)
         meter_per = Signal(32)
         meter_cnt = Signal(16)
-        with m.If(self._meter_ctrl.f.clear.w_stb & self._meter_ctrl.f.clear.w_data):
+        # Shortest and longest trigger interval since the last clear: equal
+        # (within a few %) means one trigger per cycle.
+        meter_imin = Signal(32, init=0xFFFF_FFFF)
+        meter_imax = Signal(32)
+        meter_clr  = self._meter_ctrl.f.clear.w_stb & self._meter_ctrl.f.clear.w_data
+        with m.If(meter_clr):
             m.d.sync += [
                 meter_min.eq((1 << (psq_w - 1)) - 1),
                 meter_max.eq(-(1 << (psq_w - 1))),
+                meter_imin.eq(0xFFFF_FFFF),
+                meter_imax.eq(0),
             ]
         with m.Elif(trig.i.valid & trig.i.ready):
             with m.If(psq_raw < meter_min):
                 m.d.sync += meter_min.eq(psq_raw)
             with m.If(psq_raw > meter_max):
                 m.d.sync += meter_max.eq(psq_raw)
+        m.d.sync += holdoff_ok.eq(meter_ctr >= holdoff)
+        with m.If(self._holdoff.f.samples.w_stb):
+            m.d.sync += holdoff.eq(self._holdoff.f.samples.w_data)
         with m.If(trig.i.valid & trig.i.ready):
-            with m.If(trig.o.payload):
+            with m.If(trig_fire):
                 m.d.sync += [
                     meter_per.eq(meter_ctr + 1),
                     meter_ctr.eq(0),
                     meter_cnt.eq(meter_cnt + 1),
                 ]
+                with m.If(~meter_clr):
+                    with m.If(meter_ctr + 1 < meter_imin):
+                        m.d.sync += meter_imin.eq(meter_ctr + 1)
+                    with m.If(meter_ctr + 1 > meter_imax):
+                        m.d.sync += meter_imax.eq(meter_ctr + 1)
             with m.Elif(meter_ctr != 0xFFFF_FFFF):
                 m.d.sync += meter_ctr.eq(meter_ctr + 1)
         m.d.comb += [
@@ -331,10 +363,12 @@ class ScopePeripheral(wiring.Component):
             self._meter_max.f.level.r_data.eq(meter_max << level_shift),
             self._meter_period.f.samples.r_data.eq(meter_per),
             self._meter_count.f.count.r_data.eq(meter_cnt),
+            self._meter_imin.f.samples.r_data.eq(meter_imin),
+            self._meter_imax.f.samples.r_data.eq(meter_imax),
         ]
         # Trigger => Ramp
         dsp.connect_remap(m, trig.o, ramp.i, lambda o, i: [
-            i.payload.trigger.eq(o.payload | trigger_always),
+            i.payload.trigger.eq(trig_fire | trigger_always),
             i.payload.td.eq(timebase),
         ])
 

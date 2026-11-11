@@ -14,7 +14,16 @@ Vectorscope/oscilloscope with menu system, USB audio and tunable delay lines.
       trigger level sits halfway up its swing with a hysteresis band of half
       the swing, and the timebase steps so 2 to 5 cycles fill the screen, so
       a cycling CV or an audio wave stays put. Both choices show in the menu.
+      A trigger holdoff climbs until there is one trigger per cycle, so a
+      wavefolded or harmonic-rich wave that crosses the level several times
+      a cycle also holds still; the timebase only moves once that has locked.
       With nothing crossing, it free-runs.
+
+    This build adds gateware (trigger hysteresis, holdoff and a ch0 meter) to
+    a design that only just met timing, so it is pinned to a placer seed:
+    ``AMARANTH_nextpnr_opts="--timing-allow-fail --seed 9"``. Across seeds
+    2-9 at commit time, sync closed between 58.5 and 61.9 MHz against 60;
+    re-check after any gateware change.
 
 The channels are assigned as follows:
 

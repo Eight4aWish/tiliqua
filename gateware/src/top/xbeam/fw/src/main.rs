@@ -51,9 +51,41 @@ const TIMEBASES_FAST_FIRST: [Timebase; 13] = [
     Timebase::Timebase500ms,
 ];
 
-/// State for `TriggerMode::Auto`. The gateware measures ch0 (min, max, and
-/// samples between triggers); this turns that into a trigger level halfway
-/// up the swing, a hysteresis band of half the swing, and a timebase.
+/// Trigger intervals within this many percent of each other count as one
+/// trigger per cycle.
+const AUTO_LOCK_PCT: u64 = 6;
+
+/// Holdoff search state for `TriggerMode::Auto`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lock {
+    /// Ignore the next update (its intervals straddle a holdoff change).
+    Settle,
+    /// Intervals differ: raise the holdoff each update until they agree.
+    Climb,
+    /// One trigger per cycle. `probed` is set once a shorter holdoff has
+    /// been tried at this period.
+    Locked { interval: u32, probed: bool },
+    /// Trying 70% of the holdoff; `prev` is restored if the lock breaks.
+    Probe { prev: u32 },
+}
+
+/// State for `TriggerMode::Auto`. The gateware measures ch0: min and max,
+/// and the shortest and longest interval between triggers since the last
+/// clear. This turns those into a trigger level halfway up the swing, a
+/// hysteresis band of half the swing, a holdoff and a timebase.
+///
+/// The holdoff is what makes a wavefolded or harmonic-rich wave sit still.
+/// Such a wave crosses the level several times per cycle, so without it the
+/// sweep starts on whichever crossing comes first. Starting from 0, the
+/// holdoff climbs (to 95% of the longest interval, at least +15% a step)
+/// until the intervals agree: one trigger per cycle, always on the same
+/// crossing. Once locked it tries 70% once, in case it locked on every other
+/// cycle; if a lock breaks for two updates (a new note) it starts again from
+/// 0. Modelled on folded waves at 80 Hz-2 kHz before it was built: locks in
+/// 0.3-0.7 s.
+///
+/// The timebase only moves on a locked period, so the search never makes it
+/// flick between steps.
 struct AutoTrigger {
     win_min: [i32; AUTO_WINDOWS],
     win_max: [i32; AUTO_WINDOWS],
@@ -61,7 +93,10 @@ struct AutoTrigger {
     last_update: u32,
     last_count: u16,
     last_trig_tick: u32,
+    lock: Lock,
+    unlocked_n: u8,
     period_us: Option<u64>,
+    holdoff: u32,
     pending_tb: Option<Timebase>,
     pending_n: u8,
     hyst: i16,
@@ -77,11 +112,71 @@ impl AutoTrigger {
             last_update: 0,
             last_count: 0,
             last_trig_tick: 0,
+            lock: Lock::Settle,
+            unlocked_n: 0,
             period_us: None,
+            holdoff: 0,
             pending_tb: None,
             pending_n: 0,
             hyst: 0,
             free_run: true,
+        }
+    }
+
+    fn set_holdoff(&mut self, scope: &mut Scope0, samples: u32) {
+        self.holdoff = samples;
+        scope.set_holdoff(samples);
+    }
+
+    fn reacquire(&mut self, scope: &mut Scope0) {
+        self.set_holdoff(scope, 0);
+        self.lock = Lock::Settle;
+        self.unlocked_n = 0;
+    }
+
+    /// One step of the holdoff search, from this window's intervals.
+    fn step_holdoff(&mut self, scope: &mut Scope0, imin: u32, imax: u32) {
+        let agree = u64::from(imax) * 100 <= u64::from(imin) * (100 + AUTO_LOCK_PCT);
+        self.lock = match self.lock {
+            Lock::Settle => Lock::Climb,
+            Lock::Probe { prev } => {
+                if !agree {
+                    self.set_holdoff(scope, prev);
+                }
+                Lock::Locked { interval: imax, probed: true }
+            }
+            _ if agree => {
+                self.unlocked_n = 0;
+                let probed = match self.lock {
+                    Lock::Locked { interval, probed } =>
+                        probed && imax.abs_diff(interval) * 10 <= interval,
+                    _ => false,
+                };
+                if !probed && self.holdoff > 0 {
+                    let prev = self.holdoff;
+                    self.set_holdoff(scope, prev / 10 * 7);
+                    Lock::Probe { prev }
+                } else {
+                    Lock::Locked { interval: imax, probed }
+                }
+            }
+            Lock::Climb => {
+                let up = (self.holdoff / 100 * 115).max(imax / 100 * 95);
+                self.set_holdoff(scope, up);
+                Lock::Climb
+            }
+            Lock::Locked { .. } => {
+                self.unlocked_n += 1;
+                if self.unlocked_n >= 2 {
+                    self.reacquire(scope);
+                    Lock::Settle
+                } else {
+                    self.lock
+                }
+            }
+        };
+        if let Lock::Locked { interval, .. } = self.lock {
+            self.period_us = Some(u64::from(interval) * 1_000_000 / u64::from(scope.fs_up()));
         }
     }
 
@@ -95,18 +190,19 @@ impl AutoTrigger {
         self.last_update = now;
 
         let (mn, mx) = scope.meter_min_max();
+        let (imin, imax) = scope.meter_intervals();
+        let (_, cnt) = scope.meter_period();
         scope.meter_clear();
         self.win_min[self.win_idx] = mn;
         self.win_max[self.win_idx] = mx;
         self.win_idx = (self.win_idx + 1) % AUTO_WINDOWS;
 
-        let (per, cnt) = scope.meter_period();
         if cnt != self.last_count {
             self.last_count = cnt;
             self.last_trig_tick = now;
-            if per > 0 {
-                self.period_us = Some(u64::from(per) * 1_000_000 / u64::from(scope.fs_up()));
-            }
+        }
+        if imax > 0 && imin <= imax {
+            self.step_holdoff(scope, imin, imax);
         }
 
         let lo = *self.win_min.iter().min().unwrap_or(&i32::MAX);
@@ -115,6 +211,7 @@ impl AutoTrigger {
             // Nothing there to trigger on: free-run, like a bench scope's auto.
             self.free_run = true;
             self.hyst = 0;
+            self.reacquire(scope);
             return None;
         }
 
@@ -123,10 +220,17 @@ impl AutoTrigger {
 
         let mut tb = current_tb;
         if let Some(p) = self.period_us {
-            let want = TIMEBASES_FAST_FIRST.iter()
-                .copied()
-                .find(|t| scope.sweep_us(*t) >= 2 * p)
-                .unwrap_or(Timebase::Timebase500ms);
+            // Keep the current timebase while it shows roughly 2-6 cycles,
+            // so a period near a step boundary doesn't flick between steps.
+            let cur = scope.sweep_us(current_tb);
+            let want = if cur * 10 >= p * 18 && cur <= p * 6 {
+                current_tb
+            } else {
+                TIMEBASES_FAST_FIRST.iter()
+                    .copied()
+                    .find(|t| scope.sweep_us(*t) >= 2 * p)
+                    .unwrap_or(Timebase::Timebase500ms)
+            };
             if want == current_tb {
                 self.pending_tb = None;
                 self.pending_n = 0;
@@ -144,10 +248,13 @@ impl AutoTrigger {
         }
 
         // No trigger for twice the longer of a sweep and a period (and at
-        // least 300 ms): free-run until crossings come back.
+        // least 300 ms): free-run and search again.
         let wait_us = 2 * scope.sweep_us(tb).max(self.period_us.unwrap_or(0)).max(150_000);
         let waited_us = u64::from(now.wrapping_sub(self.last_trig_tick)) * u64::from(TICK_PERIOD_MS) * 1000;
         self.free_run = waited_us > wait_us;
+        if self.free_run {
+            self.reacquire(scope);
+        }
 
         Some((level, tb))
     }
@@ -453,6 +560,7 @@ fn main() -> ! {
                 scope.set_trigger_hyst(auto_trig.hyst);
             } else {
                 scope.set_trigger_hyst(0);
+                auto_trig.reacquire(&mut scope);
             }
             let (sppd_x, sppd) = scope.pixels_per_div();
             let n_ch = opts.scope1.n_channels.value;
